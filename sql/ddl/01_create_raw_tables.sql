@@ -2,10 +2,13 @@
 
 -- Tabela: raw.transacoes_financeiras
 CREATE TABLE IF NOT EXISTS raw.transacoes_financeiras (
-    id_transacao_raw TEXT, -- ok
-    data_transacao TEXT, -- ok
+    id_transacao_raw TEXT,      -- formato 'TR-00144'
+    data_transacao TEXT,
     data_competencia TEXT,
-    id_area_raw TEXT,
+    -- Guarda o CODIGO da area ('FIN', 'TI'), nao o id numerico de raw.areas.
+    -- Antes se chamava id_area_raw, o que fazia o join parecer errado
+    -- (t.id_area_raw = a.codigo_area). O nome agora diz o que a coluna e.
+    codigo_area_raw TEXT,
     id_fornecedor_raw TEXT,
     tipo_transacao TEXT,
     valor_bruto TEXT, -- ok
@@ -25,8 +28,10 @@ CREATE TABLE IF NOT EXISTS raw.transacoes_financeiras (
 
 COMMENT ON TABLE raw.transacoes_financeiras IS 'Transações financeiras brutas - Camada RAW';
 
-CREATE INDEX IF NOT EXISTS idx_ingestion_ts ON raw.transacoes_financeiras (ingestion_ts);
-CREATE INDEX IF NOT EXISTS idx_source ON raw.transacoes_financeiras (source_system);
+-- Nomes de indice sao unicos POR SCHEMA: prefixar com a tabela evita colisao
+-- silenciosa entre indices de tabelas diferentes do mesmo schema.
+CREATE INDEX IF NOT EXISTS idx_trans_ingestion_ts ON raw.transacoes_financeiras (ingestion_ts);
+CREATE INDEX IF NOT EXISTS idx_trans_source ON raw.transacoes_financeiras (source_system);
 
 -- Tabela: raw.areas
 CREATE TABLE IF NOT EXISTS raw.areas (
@@ -49,10 +54,22 @@ COMMENT ON TABLE raw.areas IS 'Áreas/departamentos brutos - Camada RAW';
 CREATE TABLE IF NOT EXISTS raw.fornecedores_clientes (
     id_fornecedor_raw TEXT,
     nome_fornecedor TEXT,
-    tipo_fornecedor TEXT,
+    tipo_fornecedor TEXT,   -- CLIENTE | FORNECEDOR | AMBOS (derivado do fluxo real)
     cnpj_cpf TEXT,
-    contato TEXT,
+    contato TEXT,           -- e-mail
+    telefone TEXT,
     endereco TEXT,
+    -- Localizacao em colunas proprias: antes so existia embutida na string de
+    -- endereco, o que obrigaria o ETL a fazer parsing de texto.
+    cidade TEXT,
+    estado TEXT,
+    pais TEXT,
+    setor_atuacao TEXT,
+    -- Atributos de credito derivados do comportamento observado do parceiro
+    -- (inadimplencia e prazo medio de liquidacao). NULL/SEM_HISTORICO para os
+    -- parceiros cadastrados que ainda nao transacionaram.
+    rating_credito TEXT,
+    prazo_medio INT,
     ingestion_id CHAR(36) NOT NULL,
     ingestion_ts TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     source_system TEXT NOT NULL,
@@ -82,7 +99,9 @@ COMMENT ON TABLE raw.categorias_contabeis IS 'Categorias contábeis brutas - Cam
 -- Tabela: raw.pagamentos
 CREATE TABLE IF NOT EXISTS raw.pagamentos (
     id_pagamento_raw INT,
-    id_transacao_raw INT,
+    -- TEXT, no mesmo formato da fato ('TR-00144'). Era INT (144), o que
+    -- obrigava o ETL a reconstruir a chave para conseguir juntar as tabelas.
+    id_transacao_raw TEXT,
     data_pagamento TEXT,
     valor_pago TEXT,
     metodo_pagamento TEXT,
@@ -97,12 +116,13 @@ CREATE TABLE IF NOT EXISTS raw.pagamentos (
 
 COMMENT ON TABLE raw.pagamentos IS 'Pagamentos brutos - Camada RAW';
 
-CREATE INDEX IF NOT EXISTS idx_transacao ON raw.pagamentos (id_transacao_raw);
+CREATE INDEX IF NOT EXISTS idx_pag_transacao ON raw.pagamentos (id_transacao_raw);
 
 -- Tabela: raw.recebimentos
 CREATE TABLE IF NOT EXISTS raw.recebimentos (
     id_recebimento_raw INT,
-    id_transacao_raw INT,
+    -- TEXT, no mesmo formato da fato ('TR-00144') -- ver raw.pagamentos.
+    id_transacao_raw TEXT,
     data_recebimento TEXT,
     valor_recebido TEXT,
     metodo_recebimento TEXT,
@@ -117,7 +137,10 @@ CREATE TABLE IF NOT EXISTS raw.recebimentos (
 
 COMMENT ON TABLE raw.recebimentos IS 'Recebimentos brutos - Camada RAW';
 
-CREATE INDEX IF NOT EXISTS idx_transacao ON raw.recebimentos (id_transacao_raw);
+-- Antes este indice tambem se chamava 'idx_transacao', igual ao de raw.pagamentos.
+-- Como o nome ja existia no schema, o CREATE INDEX IF NOT EXISTS era ignorado em
+-- silencio e raw.recebimentos ficava SEM indice.
+CREATE INDEX IF NOT EXISTS idx_rec_transacao ON raw.recebimentos (id_transacao_raw);
 
 -- Tabela: raw.funcionarios
 CREATE TABLE IF NOT EXISTS raw.funcionarios (
