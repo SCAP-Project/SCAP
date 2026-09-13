@@ -30,7 +30,24 @@ print(f'ingestion_ts : {INGESTION_TS}')
 # In[2]:
 
 
-workspace = os.path.abspath(os.path.join(os.getcwd(), '..', '..'))
+# A raiz do projeto e localizada subindo ate achar a pasta 'sql' (marcador do
+# repo). Antes era os.path.join(os.getcwd(), '..', '..'), que so acertava
+# quando o script rodava a partir de etl/data_generation/ -- rodando de
+# generators/ (onde o arquivo mora) os CSVs iam parar em etl/data/.
+def achar_raiz(marcador='sql'):
+    caminho = os.path.abspath(os.getcwd())
+    while True:
+        if os.path.isdir(os.path.join(caminho, marcador)):
+            return caminho
+        pai = os.path.dirname(caminho)
+        if pai == caminho:
+            raise RuntimeError(
+                f"raiz do projeto nao encontrada (marcador '{marcador}') "
+                f"a partir de {os.getcwd()}"
+            )
+        caminho = pai
+
+workspace = achar_raiz()
 fato_dir  = os.path.join(workspace, 'data', 'raw', 'transacoes_financeiras')
 fato_csvs = sorted(glob.glob(os.path.join(fato_dir, '*.csv')))
 
@@ -40,7 +57,11 @@ dfs = [pd.read_csv(f, usecols=[
 ]) for f in fato_csvs]
 df_fato = pd.concat(dfs, ignore_index=True)
 
-df_fato['id_transacao_num'] = df_fato['id_transacao_raw'].str.replace('TR-', '').astype(int)
+# C3: a chave da transacao e mantida no MESMO formato da tabela fato
+# ('TR-00144'). Antes era gravada como inteiro (144), o que obrigava o ETL a
+# reconstruir a chave com "'TR-' || lpad(id::text, 5, '0')" para conseguir juntar
+# pagamento e transacao -- regra fragil, espalhada, e que fazia o tipo declarado
+# no DDL (INT) mentir sobre o conteudo.
 df_fato['data_transacao']   = pd.to_datetime(df_fato['data_transacao'])
 df_fato['valor_liquido']    = df_fato['valor_liquido'].astype(float)
 
@@ -51,15 +72,29 @@ print(df_fato.groupby(['tipo_transacao', 'status_pagamento']).size().unstack(fil
 # In[3]:
 
 
-df_receita = df_fato[df_fato['tipo_transacao'] == 'RECEITA'].copy().reset_index(drop=True)
+# B5: existe recebimento se, e somente se, a receita foi liquidada -- no prazo
+# (PAGO) ou com atraso (ATRASADO). Antes o filtro era apenas
+# tipo_transacao == 'RECEITA', o que produzia 1.011 recebimentos de transacoes
+# CANCELADAS (dinheiro entrando de venda cancelada). O gerador de pagamentos ja
+# excluia CANCELADO; a assimetria entre os dois era um bug.
+df_receita = df_fato[
+    (df_fato['tipo_transacao'] == 'RECEITA') &
+    (df_fato['status_pagamento'].isin(['PAGO', 'ATRASADO']))
+].copy().reset_index(drop=True)
 total_receita = len(df_receita)
-extras_necessarios = QTD_RECEBIMENTOS - total_receita
 
-print(f'Total RECEITA disponível: {total_receita:,}')
-print(f'Extras (parcelas adicionais) necessários: {extras_necessarios:,}')
+# Parcelamento: parte das receitas liquidadas no prazo vira venda em 2 parcelas.
+# Antes a quantidade de extras era o que faltasse para bater a cota fixa de
+# 18.200; agora e uma taxa do proprio volume, entao o numero decorre da regra.
+TAXA_PARCELAMENTO = 0.15
 
 df_pago_receita = df_receita[df_receita['status_pagamento'] == 'PAGO'] \
     .sort_values('valor_liquido', ascending=False)
+
+extras_necessarios = int(round(len(df_pago_receita) * TAXA_PARCELAMENTO))
+
+print(f'Total RECEITA liquidada: {total_receita:,}')
+print(f'Parcelas adicionais ({TAXA_PARCELAMENTO:.0%} das PAGO): {extras_necessarios:,}')
 
 df_duplicadas = df_pago_receita.head(extras_necessarios).copy()
 df_duplicadas['parcela'] = 2
@@ -67,7 +102,6 @@ df_receita['parcela']    = 1
 
 df_base = pd.concat([df_receita, df_duplicadas], ignore_index=True)
 df_base = df_base.sample(frac=1, random_state=SEED).reset_index(drop=True)
-df_base = df_base.head(QTD_RECEBIMENTOS).reset_index(drop=True)
 
 print(f'\nBase para geração: {len(df_base):,} registros')
 
@@ -94,7 +128,7 @@ rng_valor  = np.random.RandomState(SEED + 2)
 registros = []
 for seq, row in df_base.iterrows():
     id_rec       = seq + 1
-    id_trans_int = int(row['id_transacao_num'])
+    id_trans = row['id_transacao_raw']
     status       = row['status_pagamento']
     parcela      = int(row.get('parcela', 1))
 
@@ -122,11 +156,11 @@ for seq, row in df_base.iterrows():
     else:
         metodo = rng_metodo.choice(METODOS_RECEBIMENTO, p=PESOS_METODO)
 
-    comprovante = gerar_comprovante(id_rec, id_trans_int, data_rec)
+    comprovante = gerar_comprovante(id_rec, id_trans, data_rec)
 
     reg = {
         'id_recebimento_raw':  id_rec,
-        'id_transacao_raw':    id_trans_int,
+        'id_transacao_raw':    id_trans,
         'data_recebimento':    data_rec,
         'valor_recebido':      valor,
         'metodo_recebimento':  metodo,
@@ -162,13 +196,13 @@ df_rec.head()
 # In[6]:
 
 
-assert len(df_rec) == QTD_RECEBIMENTOS, f'Esperado {QTD_RECEBIMENTOS:,}, gerado {len(df_rec):,}'
-assert df_rec['id_recebimento_raw'].nunique() == QTD_RECEBIMENTOS, 'IDs duplicados!'
-assert df_rec['comprovante'].nunique() == QTD_RECEBIMENTOS, 'Comprovantes duplicados!'
+assert df_rec['id_recebimento_raw'].nunique() == len(df_rec), 'IDs duplicados!'
+assert df_rec['comprovante'].nunique() == len(df_rec), 'Comprovantes duplicados!'
+assert not (df_base['status_pagamento'] == 'CANCELADO').any(), 'recebimento de transação cancelada!'
 assert df_rec['valor_recebido'].min() > 0, 'Valores negativos ou zero!'
 
-ids_fato = set(df_fato['id_transacao_num'].astype(int))
-ids_rec  = set(df_rec['id_transacao_raw'].astype(int))
+ids_fato = set(df_fato['id_transacao_raw'])
+ids_rec  = set(df_rec['id_transacao_raw'])
 nao_existentes = ids_rec - ids_fato
 assert len(nao_existentes) == 0, f'IDs de transação inválidos: {list(nao_existentes)[:5]}'
 

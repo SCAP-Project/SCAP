@@ -111,7 +111,24 @@ print(df_areas[['id_area_raw', 'codigo_area', 'nome_area']].to_string(index=Fals
 # In[5]:
 
 
-workspace = os.path.abspath(os.path.join(os.getcwd(), '..', '..'))
+# A raiz do projeto e localizada subindo ate achar a pasta 'sql' (marcador do
+# repo). Antes era os.path.join(os.getcwd(), '..', '..'), que so acertava
+# quando o script rodava a partir de etl/data_generation/ -- rodando de
+# generators/ (onde o arquivo mora) os CSVs iam parar em etl/data/.
+def achar_raiz(marcador='sql'):
+    caminho = os.path.abspath(os.getcwd())
+    while True:
+        if os.path.isdir(os.path.join(caminho, marcador)):
+            return caminho
+        pai = os.path.dirname(caminho)
+        if pai == caminho:
+            raise RuntimeError(
+                f"raiz do projeto nao encontrada (marcador '{marcador}') "
+                f"a partir de {os.getcwd()}"
+            )
+        caminho = pai
+
+workspace = achar_raiz()
 output_dir = os.path.join(workspace, 'data', 'raw', 'areas')
 os.makedirs(output_dir, exist_ok=True)
 

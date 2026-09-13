@@ -30,7 +30,24 @@ print(f'ingestion_ts : {INGESTION_TS}')
 # In[2]:
 
 
-workspace = os.path.abspath(os.path.join(os.getcwd(), '..', '..'))
+# A raiz do projeto e localizada subindo ate achar a pasta 'sql' (marcador do
+# repo). Antes era os.path.join(os.getcwd(), '..', '..'), que so acertava
+# quando o script rodava a partir de etl/data_generation/ -- rodando de
+# generators/ (onde o arquivo mora) os CSVs iam parar em etl/data/.
+def achar_raiz(marcador='sql'):
+    caminho = os.path.abspath(os.getcwd())
+    while True:
+        if os.path.isdir(os.path.join(caminho, marcador)):
+            return caminho
+        pai = os.path.dirname(caminho)
+        if pai == caminho:
+            raise RuntimeError(
+                f"raiz do projeto nao encontrada (marcador '{marcador}') "
+                f"a partir de {os.getcwd()}"
+            )
+        caminho = pai
+
+workspace = achar_raiz()
 fato_dir  = os.path.join(workspace, 'data', 'raw', 'transacoes_financeiras')
 fato_csvs = sorted(glob.glob(os.path.join(fato_dir, '*.csv')))
 
@@ -40,7 +57,11 @@ dfs = [pd.read_csv(f, usecols=[
 ]) for f in fato_csvs]
 df_fato = pd.concat(dfs, ignore_index=True)
 
-df_fato['id_transacao_num'] = df_fato['id_transacao_raw'].str.replace('TR-', '').astype(int)
+# C3: a chave da transacao e mantida no MESMO formato da tabela fato
+# ('TR-00144'). Antes era gravada como inteiro (144), o que obrigava o ETL a
+# reconstruir a chave com "'TR-' || lpad(id::text, 5, '0')" para conseguir juntar
+# pagamento e transacao -- regra fragil, espalhada, e que fazia o tipo declarado
+# no DDL (INT) mentir sobre o conteudo.
 df_fato['data_transacao']   = pd.to_datetime(df_fato['data_transacao'])
 df_fato['valor_liquido']    = df_fato['valor_liquido'].astype(float)
 
@@ -51,37 +72,21 @@ print(df_fato.groupby(['tipo_transacao', 'status_pagamento']).size().unstack(fil
 # In[3]:
 
 
-df_pago = df_fato[
+# Regra de negocio: existe pagamento se, e somente se, a despesa foi liquidada
+# -- no prazo (PAGO) ou com atraso (ATRASADO). Transacao CANCELADA nao gera
+# pagamento.
+#
+# Antes havia uma cota fixa (QTD_PAGAMENTOS = 21.500) que o gerador precisava
+# bater: ele pegava todos os PAGO, completava com ATRASADO amostrados e, se
+# ainda faltasse, puxava ate transacoes CANCELADAS. O volume agora decorre da
+# regra, nao de um numero arbitrario.
+df_base = df_fato[
     (df_fato['tipo_transacao'] == 'DESPESA') &
-    (df_fato['status_pagamento'] == 'PAGO')
-].copy()
-
-qtd_atrasado_necessario = QTD_PAGAMENTOS - len(df_pago)
-df_atrasado = df_fato[
-    (df_fato['tipo_transacao'] == 'DESPESA') &
-    (df_fato['status_pagamento'] == 'ATRASADO')
-].sample(n=min(qtd_atrasado_necessario, len(df_fato[
-    (df_fato['tipo_transacao'] == 'DESPESA') &
-    (df_fato['status_pagamento'] == 'ATRASADO')
-])), random_state=SEED).copy()
-
-df_base = pd.concat([df_pago, df_atrasado], ignore_index=True)
-if len(df_base) < QTD_PAGAMENTOS:
-    faltam = QTD_PAGAMENTOS - len(df_base)
-    df_canc = df_fato[
-        (df_fato['tipo_transacao'] == 'DESPESA') &
-        (df_fato['status_pagamento'] == 'CANCELADO')
-    ].sample(n=min(faltam, len(df_fato[
-        (df_fato['tipo_transacao'] == 'DESPESA') &
-        (df_fato['status_pagamento'] == 'CANCELADO')
-    ])), random_state=SEED).copy()
-    df_base = pd.concat([df_base, df_canc], ignore_index=True)
-
-df_base = df_base.head(QTD_PAGAMENTOS).reset_index(drop=True)
+    (df_fato['status_pagamento'].isin(['PAGO', 'ATRASADO']))
+].copy().reset_index(drop=True)
 
 print(f'Transações selecionadas: {len(df_base):,}')
-print(f'  PAGO:      {len(df_pago):,}')
-print(f'  ATRASADO:  {len(df_atrasado):,}')
+print(df_base['status_pagamento'].value_counts().to_string())
 
 
 # In[4]:
@@ -106,7 +111,7 @@ rng_valor  = np.random.RandomState(SEED + 2)
 registros = []
 for seq, row in df_base.iterrows():
     id_pag       = seq + 1
-    id_trans_int = int(row['id_transacao_num'])
+    id_trans = row['id_transacao_raw']
     status       = row['status_pagamento']
 
     if status == 'ATRASADO':
@@ -127,11 +132,11 @@ for seq, row in df_base.iterrows():
     else:
         metodo = rng_metodo.choice(METODOS_PAGAMENTO, p=PESOS_METODO)
 
-    comprovante = gerar_comprovante(id_pag, id_trans_int, data_pag)
+    comprovante = gerar_comprovante(id_pag, id_trans, data_pag)
 
     reg = {
         'id_pagamento_raw':  id_pag,
-        'id_transacao_raw':  id_trans_int,
+        'id_transacao_raw':  id_trans,
         'data_pagamento':    data_pag,
         'valor_pago':        valor,
         'metodo_pagamento':  metodo,
@@ -167,9 +172,9 @@ df_pag.head()
 # In[6]:
 
 
-assert len(df_pag) == QTD_PAGAMENTOS, f'Esperado {QTD_PAGAMENTOS:,}, gerado {len(df_pag):,}'
-assert df_pag['id_pagamento_raw'].nunique() == QTD_PAGAMENTOS, 'IDs duplicados!'
-assert df_pag['comprovante'].nunique() == QTD_PAGAMENTOS, 'Comprovantes duplicados!'
+assert df_pag['id_pagamento_raw'].nunique() == len(df_pag), 'IDs duplicados!'
+assert df_pag['comprovante'].nunique() == len(df_pag), 'Comprovantes duplicados!'
+assert not (df_base['status_pagamento'] == 'CANCELADO').any(), 'pagamento de transação cancelada!'
 assert df_pag['valor_pago'].min() > 0, 'Valores negativos ou zero!'
 assert not df_pag['data_pagamento'].isna().any(), 'Datas nulas!'
 
