@@ -69,6 +69,7 @@ data/raw/
 data/trusted/
 data/refined/
 data/exports/
+data/ground_truth/
 
 # Future orchestration and analytics artifacts
 dbt/target/
