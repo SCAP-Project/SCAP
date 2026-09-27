@@ -30,6 +30,10 @@ def get_engine() -> Engine:
             settings.database_url,
             pool_pre_ping=True,  # valida a conexão antes de usar (resiliente a drops do RDS)
             future=True,
+            # RDS exige SSL. Sem isso, sslmode='prefer' tenta com e sem SSL e,
+            # numa falha de auth, mistura os dois erros na mesma mensagem
+            # (ver etl/utils/run_sql.py).
+            connect_args={"sslmode": "require"},
         )
     return _engine
 

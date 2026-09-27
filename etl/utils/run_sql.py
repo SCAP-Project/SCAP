@@ -54,6 +54,11 @@ def executar(caminhos: list[Path], usuario: str, senha: str) -> None:
         dbname=settings.db_name,
         user=usuario,
         password=senha,
+        # RDS exige SSL. Sem isso, sslmode='prefer' (padrao do libpq) tenta a
+        # conexao SSL e, se falhar por qualquer motivo, tenta de novo sem SSL --
+        # e o pg_hba do RDS rejeita a segunda tentativa por falta de
+        # criptografia, poluindo o erro real com uma mensagem secundaria.
+        sslmode="require",
     )
     # autocommit para o proprio arquivo controlar as transacoes (BEGIN/COMMIT).
     conn.autocommit = True
