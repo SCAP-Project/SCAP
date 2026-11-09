@@ -1,82 +1,53 @@
-# Roadmap - SCAP (Sistema de Credito e Anomalias Preditivas)
+# Roadmap — SCAP
 
-Ultima atualizacao: 28/06/2026
+Atualizado em 09/11/2026.
 
----
+## Infraestrutura
 
-## Infraestrutura atual
+A conta AWS foi encerrada. O projeto usa CSVs locais. SQLs e ETLs de banco
+permanecem como referência histórica.
 
-- Amazon RDS PostgreSQL como banco principal.
-- Amazon EC2 como Bastion Host para acesso ao RDS privado via SSH Tunnel, quando necessario.
-- PostgreSQL como tecnologia relacional da plataforma de dados.
+## Concluído — ETL CSV
 
----
+- [x] Arquitetura raw → trusted → refined.
+- [x] Geração de 24 meses de transações e gabarito separado.
+- [x] Correção do parcelamento e regeneração dos parceiros derivados.
+- [x] Validação e transformação das sete entidades da origem.
+- [x] Seis dimensões e quatro fatos em refined.
+- [x] Saldos diários por área/moeda, incluindo dias sem movimento.
+- [x] Histórico diário e chaves estáveis nas reexecuções.
+- [x] Executor local, manifesto com hashes, testes e documentação.
 
-## Concluido
+Primeira execução: 39.792 transações, 20.724 pagamentos, 18.681 recebimentos
+e 15.440 saldos diários.
 
-- [x] Consolidacao de branches (DEV + HML -> main unica)
-- [x] Fluxo Git definido (feature branches, PRs, convencao de commits)
-- [x] CONTRIBUTING.md e .gitattributes
-- [x] DDL completo: 3 schemas (raw, trusted, refined)
-  - raw: 7 tabelas
-  - trusted: 8 tabelas (SCD Tipo 2)
-  - refined: 6 dimensoes + 4 fatos (Star Schema)
-- [x] Dados sinteticos gerados (seed=42, reprodutiveis)
-  - 40k+ transacoes financeiras (24 meses)
-  - 250 fornecedores/clientes
-  - 150 funcionarios
-  - 40 categorias contabeis
-  - 20 areas
-  - 21.500 pagamentos
-  - 18.200 recebimentos
-- [x] Reorganizacao de pastas (generators, load_raw, ETL por camada)
+## Concluído — primeiro experimento de anomalias
 
-## Fase 2 - Pipeline ETL
+- [x] Dez notebooks de análise exploratória, um por tabela de refined.
+- [x] Objetivo: detectar anomalias de valor injetadas pelo gerador.
+- [x] Atributos por parceiro/tipo usando somente dias anteriores.
+- [x] Treino em 2024, validação no primeiro semestre/2025 e teste no segundo.
+- [x] Baseline histórico, Isolation Forest e autoencoder.
+- [x] Seleção e calibração na validação, teste final e análise de erros.
+- [x] Figuras PNG/SVG, notebooks executados e relatório de resultados.
 
-- [ ] **ETL config centralizado:** criar `etl/config/` (conexao, batch_id, logger) - hoje a pasta existe mas esta vazia (`.gitkeep`).
-- [ ] **Carga RAW (load_raw):** refatorar `load_raw_csv_to_postgres.py` como script ETL robusto - usar o config centralizado, logging, batch_id, idempotencia, tratamento de erros.
-- [ ] **RAW -> TRUSTED (raw_to_trusted):** implementar scripts por entidade:
-  - [ ] 01_areas.py
-  - [ ] 02_categorias_contabeis.py
-  - [ ] 03_fornecedores_clientes.py
-  - [ ] 04_funcionarios.py
-  - [ ] 05_transacoes_financeiras.py
-  - [ ] 06_pagamentos.py
-  - [ ] 07_recebimentos.py
-  - Cada script deve: validar tipos, tratar nulos, padronizar, aplicar SCD Tipo 2 onde necessario, logar resultados.
-- [ ] **Popular `trusted.moedas`:** script para inserir dados de referencia (BRL, USD, EUR).
-- [ ] **Popular `refined.dim_tempo`:** script para gerar spine de datas 2023-2026 (dia da semana, mes, trimestre, ano fiscal, feriados).
-- [ ] **TRUSTED -> REFINED (trusted_to_refined):** popular dimensoes a partir de trusted, depois popular fatos com chaves surrogate.
+## Próximas entregas
 
----
+- [x] Auditoria dos históricos, métricas, atributos e controle negativo.
+- [x] Novas seeds, cenários difíceis e ablação, com modelos originais congelados.
+- [ ] Reservar outro dataset/seed antes de avaliar melhorias motivadas pelos desafios.
+- [ ] Avaliar generalização e variações controladas do experimento.
+- [ ] Dashboard Power BI consumindo CSVs e resultados.
+- [ ] CI com execução automática dos testes.
+- [ ] Redação e documentação final do TCC.
 
-## Fase 3 - Machine Learning
+## Limites conhecidos
 
-- [ ] **Feature engineering:** agregacoes por cliente/fornecedor, medias moveis, desvios, frequencia de transacoes, padroes temporais.
-- [ ] **Definicao do target:** definir o que e "anomalia" e "risco de credito" no contexto dos dados sinteticos.
-- [ ] **Baseline:** modelo simples (Isolation Forest ou Random Forest) como referencia de performance.
-- [ ] **Modelo de rede neural:** TensorFlow/Keras - Autoencoder para deteccao de anomalias.
-- [ ] **Validacao:** split temporal (nao aleatorio), metricas (precision, recall, F1, AUC-ROC), analise de threshold.
-
----
-
-## Fase 4 - Entrega e apresentacao
-
-- [ ] **Dashboard Power BI:** visualizacao dos resultados, metricas do modelo, exploracao dos dados.
-- [ ] **Testes:** pytest para validacoes de dados e testes de integracao do pipeline.
-- [ ] **CI/CD:** GitHub Actions para rodar testes automaticamente nos PRs.
-- [ ] **Documentacao final:** atualizar README, docs/architecture/project_structure.txt, documentacao do TCC.
-- [ ] **Deploy no servidor:** criar tag de release, publicar a versao e documentar processo.
-
----
-
-## Divisao sugerida de trabalho
-
-| Area | Responsavel principal |
-|------|-----------------------|
-| Pipeline ETL (load_raw, raw_to_trusted) | Nasser |
-| Modelagem dimensional (trusted_to_refined) | Adam |
-| Feature engineering | Ambos |
-| Modelo de ML | Adam |
-| Dashboard Power BI | Nasser |
-| Testes e CI/CD | Ambos |
+- Dados sintéticos, com operações somente em BRL.
+- Histórico de cadastro começa na observação, sem reconstrução retroativa.
+- Alterações no mesmo dia consolidam a versão diária.
+- Rating e prazo médio completos ficam fora do treino temporal.
+- Feriados não implementados; dia útil significa segunda a sexta.
+- Remoção de fatos existentes é rejeitada para evitar reutilização de chaves.
+- Os três fatos adicionais foram concluídos em CSV, não no ETL PostgreSQL.
+- O modelo detecta distorções artificiais de valor, não fraude comprovada.

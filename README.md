@@ -1,115 +1,76 @@
 # SCAP — Sistema de Crédito e Anomalias Preditivas
-### Credit Analysis Data Pipeline & Predictive Model
 
-**Projeto de TCC / Iniciação Científica** | Engenharia da Computação  
-*Data de Início: 06/2025* | *Status: Em Desenvolvimento*
+Projeto de TCC de Engenharia da Computação. Pipeline de dados financeiros
+sintéticos para análise e detecção de anomalias de valor.
 
-## 🎯 Objetivo
-Desenvolver uma solução de dados completa para análise de risco de crédito, integrando um Data Warehouse em PostgreSQL com um modelo preditivo baseado em Redes Neurais.
+## Ambiente atual
 
-## 🏗️ Arquitetura do Sistema
-1. **Extração:** Dados históricos de crédito de fontes simuladas/anonimizadas
-2. **Armazenamento:** Data Warehouse em PostgreSQL com modelagem dimensional (Medalha)
-3. **Processamento:** Pipeline de ETL em Python (Pandas, SQLAlchemy)
-4. **ML Pipeline:** Feature engineering, treinamento e validação (TensorFlow/Keras)
-5. **Visualização:** Dashboard analítico (Power BI - planejado)
+O fluxo ativo usa CSVs locais. A conta AWS foi encerrada; RDS, EC2, túnel SSH
+e `.env` não são necessários. Os scripts PostgreSQL ficam como histórico.
 
-## ⚡ Quick Start
+## Executar o ETL
 
-Pré-requisitos:
-- Python 3.11+
-- Acesso ao Amazon RDS PostgreSQL (direto ou via túnel SSH pela EC2 Bastion Host — veja [CONTRIBUTING.md](CONTRIBUTING.md))
+Use Python 3.11 ou 3.12. Na raiz do repositório:
 
-Setup:
-```bash
-# Clone o repositório
-git clone https://github.com/SCAP-Project/SCAP.git
-cd SCAP
-
-# Crie e ative o ambiente virtual
+```powershell
 python -m venv .venv
-# Windows PowerShell: .\.venv\Scripts\Activate.ps1
-# Linux/macOS: source .venv/bin/activate
-
-# Copie o arquivo de ambiente
-cp .env.example .env
-# Preencha o .env com as credenciais do RDS
-
-# Instale as dependências
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
-pip install -r ml/requirements.txt
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements-csv.txt
+python -m etl.csv_pipeline --generate
 ```
 
-## 📁 Estrutura do Projeto
+Para reprocessar os CSVs existentes, sem regenerar as fontes:
 
-Veja [docs/architecture/project_structure.txt](docs/architecture/project_structure.txt) para detalhes completos.
-
-Resumo das camadas:
-```
-SCAP/
-├── data/               # Medalha Architecture (gitignored, dados locais)
-│   ├── raw/           # Bronze: Dados brutos
-│   ├── trusted/       # Silver: Dados validados
-│   └── refined/       # Gold: Dados para ML
-├── etl/                # Pipeline ETL (data_generation, load_raw, raw_to_trusted, trusted_to_refined)
-├── ml/                 # Machine Learning
-├── dashboard/          # Dashboard Power BI
-├── sql/                # Scripts SQL (ddl, dml, queries)
-└── docs/               # Documentação (architecture, aws, database, development)
+```powershell
+python -m etl.csv_pipeline
+python -m etl.csv_pipeline --validate-only
 ```
 
-## 🛠️ Stack Tecnológica
-- **Linguagens:** Python 3.11, SQL
-- **Banco de Dados:** Amazon RDS PostgreSQL 15
-- **Data Processing:** Pandas, NumPy, SQLAlchemy
-- **Machine Learning:** TensorFlow/Keras, Scikit-learn
-- **Infraestrutura:** Amazon RDS, Amazon EC2 (Bastion Host)
-- **Visualização:** Power BI
-- **Desenvolvimento:** Jupyter
-- **Versionamento:** Git, GitHub
+Mantenha os CSVs de trusted para preservar chaves e histórico. O manifesto
+com contagens e hashes fica em `data/exports/etl_manifest.json`.
 
-## 📊 Status Atual
-- [x] Definição da arquitetura e modelagem dimensional do DW
-- [x] Migração do ambiente para Amazon RDS PostgreSQL + EC2 Bastion Host
-- [x] Reorganização da estrutura do projeto
-- [x] Criação do schema do banco de dados (DDL)
-- [x] Geração de dados sintéticos (24 meses de transações)
-- [ ] Implementação dos scripts ETL (raw → trusted → refined)
-- [ ] Desenvolvimento do modelo de Rede Neural
-- [ ] Criação do dashboard com Power BI
-- [ ] Testes e CI/CD
+## Dados produzidos
 
-## 🔧 Configuração Rápida
+| Fato em data/refined | Registros |
+|---|---:|
+| Transações financeiras | 39.792 |
+| Pagamentos | 20.724 |
+| Recebimentos | 18.681 |
+| Saldos diários | 15.440 |
 
-```bash
-# Copiar ambiente
-cp .env.example .env
+Também são produzidas seis dimensões: tempo, área, categoria contábil,
+fornecedor/cliente, funcionário e moeda. Parcelas fecham em centavos e os
+saldos incluem dias sem movimento, separados por área e moeda.
 
-# Instalar dependências
-pip install -r requirements.txt
+## Análise e modelos
 
-# Acessar banco de dados (direto ou via túnel SSH pela EC2 — ver CONTRIBUTING.md)
-psql -h <endpoint-rds> -p 5432 -U <usuario> -d <database>
+O trabalho de ciência de dados está em [ml/README.md](ml/README.md): dez
+notebooks de análise das tabelas, cinco notebooks de etapas e comparação
+entre baseline histórico, Isolation Forest e autoencoder.
 
-# Jupyter
-jupyter lab
+```powershell
+python -m pip install -r ml/requirements.txt
+python -m ml.run --stage all
 ```
 
-## 📚 Documentação Adicional
-- [Estrutura do Projeto](docs/architecture/project_structure.txt)
-- [Guia de Contribuição](CONTRIBUTING.md)
-- [Roadmap](ROADMAP.md)
-- [Data Warehouse Docs](docs/database/)
+Os notebooks são executáveis do início ao fim e têm visualizações azuis, sem
+grade de fundo. [Resultados](ml/reports/RESULTADOS.md) registra as métricas,
+a análise de erros e as limitações do experimento sintético.
 
-## 🚀 Próximos Passos
-1. Finalizar a camada de ingestão de dados
-2. Implementar o pipeline de feature engineering
-3. Treinar e validar o modelo preditivo
-4. Configurar CI/CD com GitHub Actions
+## Testes
 
-## 📖 Referências
-- [Kimball Group - Data Warehouse Toolkit](https://www.kimballgroup.com/)
-- [Medallion Architecture](https://www.databricks.com/blog/2022/06/24/introduction-medallion-architecture.html)
-- [Amazon RDS Docs](https://docs.aws.amazon.com/rds/)
-- [PostgreSQL Docs](https://www.postgresql.org/docs/)
+```powershell
+python -m pip install pytest==7.4.3
+python -m pytest -q
+```
+
+## Documentação e próximas entregas
+
+- [ETL CSV](docs/development/ETL_CSV.md): comandos, tabelas e regras.
+- [Ciência de dados](ml/README.md): notebooks, atributos e reprodução.
+- [Roadmap](ROADMAP.md): entregas e pendências.
+- [Contribuição](CONTRIBUTING.md): branches e revisão.
+
+Próximas entregas: testar generalização em outro dataset reservado, dashboard
+Power BI e redação do TCC. Os resultados atuais descrevem uma simulação;
+não demonstram detecção de fraude ou risco real de inadimplência.
