@@ -125,6 +125,17 @@ rng_metodo = np.random.RandomState(SEED)
 rng_dias   = np.random.RandomState(SEED + 1)
 rng_valor  = np.random.RandomState(SEED + 2)
 
+# Define as duas parcelas juntas, em centavos, antes de embaralhar sua leitura.
+# A segunda e o restante: as parcelas sempre somam o valor liquido original.
+rng_parcelas = np.random.RandomState(SEED + 3)
+valores_parcelas = {}
+for _, transacao in df_duplicadas.iterrows():
+    total_centavos = int(round(float(transacao['valor_liquido']) * 100))
+    primeira = int(round(total_centavos * rng_parcelas.uniform(0.48, 0.52)))
+    valores_parcelas[transacao['id_transacao_raw']] = (
+        primeira, total_centavos - primeira,
+    )
+
 registros = []
 for seq, row in df_base.iterrows():
     id_rec       = seq + 1
@@ -141,9 +152,8 @@ for seq, row in df_base.iterrows():
     data_rec = (row['data_transacao'] + timedelta(days=int(delta_dias))).strftime('%Y-%m-%d')
 
     val_base = float(row['valor_liquido'])
-    if parcela == 2:
-        fator = rng_valor.uniform(0.48, 0.52)
-        valor = round(val_base * fator, 2)
+    if id_trans in valores_parcelas:
+        valor = valores_parcelas[id_trans][parcela - 1] / 100
     elif status == 'ATRASADO':
         fator = rng_valor.uniform(0.95, 1.03)
         valor = round(val_base * fator, 2)
