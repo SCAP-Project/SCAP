@@ -1,0 +1,3 @@
+# ETL local em CSV. Nao exige PostgreSQL, AWS, Jupyter ou TensorFlow.
+numpy==1.26.2
+pandas==2.1.3
