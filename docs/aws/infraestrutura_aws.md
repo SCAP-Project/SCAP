@@ -1,5 +1,8 @@
 # Infraestrutura AWS - SCAP
 
+> **Historico:** a conta AWS foi encerrada. O fluxo atual usa CSVs locais,
+> sem RDS ou Bastion Host. Veja [ETL_CSV.md](../development/ETL_CSV.md).
+
 Visão geral da infraestrutura em nuvem do projeto e como acessá-la.
 Credenciais reais **nunca** ficam neste documento — elas vivem no `.env` local
 de cada membro (e em `docs/private/`, que é gitignored).

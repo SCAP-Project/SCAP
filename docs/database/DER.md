@@ -1,3 +1,9 @@
+# Fluxo local em CSV
+Desde 09/11/2026 o fluxo ativo e CSV. As entidades e relacionamentos abaixo
+continuam como referencia conceitual; chaves e colunas do fluxo local estao
+descritas em [ETL_CSV.md](../development/ETL_CSV.md). Os quatro fatos sao
+gerados em CSV; as notas de implementacao PostgreSQL abaixo sao historicas.
+
 # DER — Diagrama de Entidade-Relacionamento
 
 > Substitui os diagramas da seção 5 de `DataWarehouse_Documentacao.pdf/docx`,

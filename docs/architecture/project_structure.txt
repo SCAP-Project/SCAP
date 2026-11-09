@@ -22,6 +22,7 @@ SCAP/
 │   └── private
 ├── etl
 │   ├── config
+│   ├── csv_pipeline             # Fluxo ativo local: validacao, trusted, refined e CLI
 │   ├── data_generation
 │   │   └── generators
 │   ├── load_raw
@@ -49,9 +50,13 @@ SCAP/
 ├── README.md
 ├── ROADMAP.md
 ├── requirements-dev.txt
+├── requirements-csv.txt        # Dependencias locais, sem AWS
 └── requirements.txt
 
 Observacoes:
+
+- Desde 09/11/2026 o fluxo ativo e python -m etl.csv_pipeline. A conta AWS foi encerrada.
+- data/trusted/ e data/refined/ recebem um CSV por tabela; data/exports/ guarda o manifesto.
 
 - `data/` deve armazenar dados e artefatos de dados, nao codigo Python.
 - `etl/data_generation/` concentra os scripts e notebooks que geram CSVs sinteticos.

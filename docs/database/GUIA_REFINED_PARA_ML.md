@@ -1,5 +1,11 @@
 # Guia da camada `refined`
 
+> **09/11/2026 — fluxo atual em CSV:** a conta AWS foi encerrada. Consulte
+> [ETL_CSV.md](../development/ETL_CSV.md) para comandos, arquivos e contratos
+> atuais. Os tres fatos adicionais ja sao produzidos pelo ETL CSV. As secoes
+> abaixo registram o estado anterior do PostgreSQL, em 27/09/2026; nomes de
+> colunas e chaves podem diferir do fluxo local.
+
 Documento de referência para quem for consumir a camada `refined` para
 análise de dados e machine learning (feature engineering, detecção de
 anomalias, dashboards). Cobre o que já está pronto, o dicionário de dados

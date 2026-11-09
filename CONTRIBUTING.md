@@ -1,5 +1,11 @@
 # Guia de contribuicao - SCAP
 
+> **Fluxo atual (09/11/2026):** o ETL e as analises usam CSVs locais. A conta
+> AWS foi encerrada. Para configurar e executar, siga
+> [ETL_CSV.md](docs/development/ETL_CSV.md). Instale `requirements-csv.txt`;
+> `.env` e acesso ao RDS nao sao necessarios. As instrucoes de banco abaixo
+> ficam como referencia historica; o fluxo de branches e PRs continua valido.
+
 ## Equipe
 
 | Nome   | Foco principal      |
