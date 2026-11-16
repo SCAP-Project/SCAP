@@ -1,0 +1,15 @@
+{
+  "origem": "Cliente sintético do teste já avaliado; demonstração de inferência, sem alegação de nova validação",
+  "seed": 320001,
+  "moeda": "BRL",
+  "arquivos_sha256": {
+    "historico_cliente.csv": "40bdaf4f7e25b93eea28dd8e852c07052f31764bfd0acaac2c3a85cdb7ee1acd",
+    "lote_cliente.csv": "3b85ca83432a87e4ff1d71cb4e086254cd82c867275f20f8751a2fb36c8397de",
+    "gabarito_avaliacao.csv": "c4ca3e6be921c62a62b117a3c478adf77745eb61c7cc6b1f8d0063d46d46cae3"
+  },
+  "linhas": {
+    "historico_cliente.csv": 10546,
+    "lote_cliente.csv": 1629,
+    "gabarito_avaliacao.csv": 1629
+  }
+}
