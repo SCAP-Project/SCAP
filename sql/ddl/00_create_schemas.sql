@@ -1,4 +1,4 @@
--- Cria as schemas para as camadas do Data Warehouse
+-- Cria as camadas raw, trusted e refined.
 
 CREATE SCHEMA IF NOT EXISTS raw;
 CREATE SCHEMA IF NOT EXISTS trusted;

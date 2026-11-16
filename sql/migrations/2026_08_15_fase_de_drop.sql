@@ -1,29 +1,6 @@
--- ===========================================================================
--- Migracao 2026-08-15 -- Fase D/E (DDL de trusted e refined)
--- ===========================================================================
--- Remove as tabelas de trusted e refined para que 02 e 03 possam recria-las
--- com a estrutura corrigida. As mudancas sao estruturais demais para ALTER:
--- colunas removidas (funcionario_sk, status_contabil, taxa_cambio,
--- numero_documento, data_demissao, status_funcionario), CHECKs trocados em
--- praticamente todas as tabelas, UNIQUEs de SCD2 adicionados e FKs que passam
--- a ser declaradas inline.
---
--- SEGURO: as duas camadas estao VAZIAS (0 linhas) e sao 100% reconstruiveis a
--- partir de raw pelo ETL. O bloco de verificacao abaixo aborta se houver
--- qualquer linha -- nao da para perder dado sem querer.
---
--- COMO RODAR (como scap_admin, dono das tabelas):
---   python -m etl.utils.run_sql \
---       sql/migrations/2026_08_15_fase_de_drop.sql \
---       sql/ddl/02_create_trusted_tables.sql \
---       sql/ddl/03_create_refined_tables.sql \
---       sql/ddl/06_grants.sql \
---       --user scap_admin
--- ===========================================================================
+-- Remove tabelas TRUSTED e REFINED somente se estiverem vazias.
+-- Recrie as camadas com os DDLs 02 e 03 e reaplique 06_grants.sql.
 
--- ---------------------------------------------------------------------------
--- 1. Trava de seguranca: aborta se houver dado em trusted/refined
--- ---------------------------------------------------------------------------
 DO $$
 DECLARE
     r      RECORD;
@@ -52,9 +29,6 @@ BEGIN
 END
 $$;
 
--- ---------------------------------------------------------------------------
--- 2. Remocao (CASCADE resolve a ordem das FKs entre elas)
--- ---------------------------------------------------------------------------
 DROP TABLE IF EXISTS refined.fact_saldos_diarios          CASCADE;
 DROP TABLE IF EXISTS refined.fact_recebimentos            CASCADE;
 DROP TABLE IF EXISTS refined.fact_pagamentos              CASCADE;
