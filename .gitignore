@@ -74,6 +74,12 @@ ml/reports/robustness/*.csv
 ml/reports/robustness/*.json
 ml/reports/robustness/**/*.csv
 ml/reports/robustness/**/*.json
+ml/reports/cliente_dummy/**/*.csv
+ml/reports/cliente_dummy/**/*.json
+ml/reports/melhoria/**/*.csv
+ml/reports/melhoria/**/*.json
+ml/reports/contexto/**/*.csv
+ml/reports/contexto/**/*.json
 data/raw/
 data/trusted/
 data/refined/
@@ -101,3 +107,16 @@ temp/
 .ropeproject
 .claude/
 __pypackages__/
+
+# Local academic materials and document exports
+/docs/tcc/
+/ml/00_consolidacao_tcc.ipynb
+/ml/consolidation.py
+*.docx
+*.pdf
+*.ppt
+*.pptx
+
+# Documentation is maintained in the root README
+*.md
+!/README.md
