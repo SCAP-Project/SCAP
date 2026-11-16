@@ -1,18 +1,19 @@
-# Normaliza line endings: LF no repositório, nativo no checkout
+# Normaliza arquivos de texto
 * text=auto
 
-# Arquivos texto sempre com LF no repositório
-*.py text
-*.sql text
-*.md text
-*.txt text
-*.yml text
-*.yaml text
-*.json text
-*.ipynb text
-.env.example text
-.gitignore text
-.gitattributes text
+# Código e configuração usam LF
+*.py text eol=lf
+*.sql text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+*.ipynb text eol=lf
+.env.example text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
 
 # Scripts Windows mantêm CRLF
 *.ps1 text eol=crlf
@@ -21,6 +22,8 @@
 # Binários (nunca normalizar)
 *.pdf binary
 *.docx binary
+*.ppt binary
+*.pptx binary
 *.xlsx binary
 *.pbix binary
 *.png binary

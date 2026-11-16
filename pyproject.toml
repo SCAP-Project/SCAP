@@ -1,0 +1,17 @@
+[tool.black]
+line-length = 88
+target-version = ["py311", "py312"]
+extend-exclude = '''
+/(
+    \.venv
+  | tmp
+  | docs
+  | ml/artifacts
+  | ml/reports
+  | ml/datasets
+)/
+| /ml/consolidation\.py$
+'''
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
