@@ -1,0 +1,33 @@
+{
+  "origem": "Dados artificiais criados pelo SCAP; nenhum dado de cliente real",
+  "configuracao": {
+    "seed": 731927,
+    "parceiros_recorrentes": 100,
+    "parceiros_novos": 20,
+    "historico_inicio": "2026-01-01",
+    "historico_fim": "2026-03-31",
+    "lote_inicio": "2026-04-01",
+    "lote_fim": "2026-04-30",
+    "probabilidade_anomalia": 0.04,
+    "fracao_sutil": 0.5,
+    "probabilidade_pico_legitimo": 0.015,
+    "fracao_regime": 0.15,
+    "fator_regime": 1.6,
+    "sigma_log_min": 0.12,
+    "sigma_log_max": 0.28,
+    "probabilidade_diaria_min": 0.35,
+    "probabilidade_diaria_max": 0.85
+  },
+  "linhas": {
+    "historico_cliente.csv": 3721,
+    "lote_cliente.csv": 1562,
+    "gabarito_avaliacao.csv": 5283
+  },
+  "moeda": "BRL",
+  "gabarito": "Somente avaliação posterior, nunca upload ou pontuação",
+  "arquivos_sha256": {
+    "historico_cliente.csv": "1d5e580732c2bc1023a103f2e71a8efbad585e894d1227e48de0f768dd89ace6",
+    "lote_cliente.csv": "61806ce8413430b5e9a300dde386936a8978fd265f27cb1b2c34a84b93006105",
+    "gabarito_avaliacao.csv": "1e75d8d826ec6057eca2470a24b2258b0e1aabd1ad258a10428fc64d82a0e532"
+  }
+}
