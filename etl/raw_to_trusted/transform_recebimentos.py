@@ -1,20 +1,6 @@
-"""Transformacao raw -> trusted: raw.recebimentos -> trusted.recebimentos.
+"""Carrega recebimentos em trusted por upsert e resolve transacao_sk e moeda_sk.
 
-Mesmo padrao de transform_pagamentos.py: raw.recebimentos nao tem coluna de
-moeda, entao moeda_sk e HERDADO da transacao-pai junto com transacao_sk, num
-unico lookup em trusted.transacoes_financeiras por id_transacao_raw. Uma
-transacao pode ter mais de um recebimento (parcelas), entao a relacao e 1:N --
-isso e esperado, nao um erro de duplicata.
-
-Sem SCD Tipo 2 (e fato). UPSERT em lote por id_recebimento_natural (INSERT
-... ON CONFLICT DO UPDATE via psycopg2.extras.execute_values), mesmo motivo de
-performance de transform_transacoes_financeiras.py.
-
-Pre-requisito: transform_transacoes_financeiras.py ja executado.
-
-Uso:
-    python -m etl.raw_to_trusted.transform_recebimentos
-"""
+Requer as transações carregadas; recebimentos sem transação são ignorados com aviso."""
 
 from __future__ import annotations
 
@@ -30,8 +16,7 @@ TAMANHO_LOTE = 1000
 
 SQL_TOTAL_RAW = "SELECT count(*) FROM raw.recebimentos"
 
-# DISTINCT ON + ORDER BY ingestion_ts DESC: fica com a linha mais recente por
-# recebimento, caso raw tenha duplicata de id_recebimento_raw.
+# Mantém a ingestão mais recente por recebimento.
 SQL_EXTRAIR_RAW = """
     SELECT DISTINCT ON (id_recebimento_raw)
            id_recebimento_raw, id_transacao_raw,
@@ -72,7 +57,6 @@ def main() -> None:
     try:
         with raw_conn.cursor() as cur:
             cur.execute(SQL_TRANSACOES_ATUAIS)
-            # id_transacao_natural -> (transacao_sk, moeda_sk)
             transacoes = {linha[0]: (linha[1], linha[2]) for linha in cur.fetchall()}
 
             if not transacoes:
@@ -93,11 +77,15 @@ def main() -> None:
             log.warning(
                 "raw.recebimentos: %d linha(s) ignorada(s) por campo nulo/invalido "
                 "ou id_recebimento_raw duplicado (%d de %d validas)",
-                total_raw - len(raw_rows), len(raw_rows), total_raw,
+                total_raw - len(raw_rows),
+                len(raw_rows),
+                total_raw,
             )
 
         if not raw_rows:
-            log.warning("raw.recebimentos nao tem nenhuma linha valida -- nada a transformar")
+            log.warning(
+                "raw.recebimentos nao tem nenhuma linha valida -- nada a transformar"
+            )
             return
 
         linhas = []
@@ -107,17 +95,26 @@ def main() -> None:
             if chaves is None:
                 log.warning(
                     "Recebimento %s ignorado: transacao '%s' nao existe em trusted.transacoes_financeiras",
-                    row["id_recebimento_raw"], row["id_transacao_raw"],
+                    row["id_recebimento_raw"],
+                    row["id_transacao_raw"],
                 )
                 sem_transacao += 1
                 continue
             transacao_sk, moeda_sk = chaves
 
-            linhas.append((
-                str(row["id_recebimento_raw"]), transacao_sk, moeda_sk,
-                row["data_recebimento"], row["valor_recebido"], row["metodo_recebimento"],
-                row["comprovante"], batch_id, row["source_system"],
-            ))
+            linhas.append(
+                (
+                    str(row["id_recebimento_raw"]),
+                    transacao_sk,
+                    moeda_sk,
+                    row["data_recebimento"],
+                    row["valor_recebido"],
+                    row["metodo_recebimento"],
+                    row["comprovante"],
+                    batch_id,
+                    row["source_system"],
+                )
+            )
 
         with raw_conn.cursor() as cur:
             execute_values(cur, SQL_UPSERT, linhas, page_size=TAMANHO_LOTE)
@@ -126,11 +123,14 @@ def main() -> None:
         log.info(
             "raw.recebimentos -> trusted.recebimentos concluido: "
             "%d linha(s) carregada(s) (upsert), %d ignorada(s) por transacao nao resolvida",
-            len(linhas), sem_transacao,
+            len(linhas),
+            sem_transacao,
         )
     except Exception:
         raw_conn.rollback()
-        log.exception("Falha na transformacao -- rollback aplicado, nada foi persistido")
+        log.exception(
+            "Falha na transformacao -- rollback aplicado, nada foi persistido"
+        )
         raise
     finally:
         raw_conn.close()

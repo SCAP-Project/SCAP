@@ -1,26 +1,7 @@
-"""Transformacao trusted -> refined: trusted.transacoes_financeiras -> refined.fact_transacoes_financeiras.
+"""Carrega a fato financeira em refined por upsert em lote.
 
-Esta e a peca que libera a analise do Adam (features + modelo de ML).
-
-trusted.transacoes_financeiras ja tem area_sk/parceiro_sk/categoria_sk/moeda_sk
-resolvidos -- mas sao surrogate keys de TRUSTED, e refined tem sequencias
-proprias. Por isso o SELECT junta de volta com as dimensoes de trusted so
-para recuperar a CHAVE NATURAL de cada uma (id_area_natural, etc.), que e o
-de/para valido entre as duas camadas; dai resolve-se a chave de refined por
-lookup em memoria nos dicionarios de dimensao (mesmo padrao dos scripts
-raw_to_trusted). tempo_sk vem de refined.dim_tempo pela data da transacao.
-
-Fato, sem SCD Tipo 2. UPSERT em lote (execute_values) por id_transacao_natural,
-mesmo motivo de performance de transform_transacoes_financeiras.py (raw ->
-trusted): ~40 mil linhas, um INSERT por linha seria inviavel via tunel SSH.
-
-Pre-requisito: transform_dim_area.py, transform_dim_fornecedor_cliente.py,
-transform_dim_categoria_contabil.py, transform_dim_moeda.py e
-seed_dim_tempo.py (todos em refined) ja executados.
-
-Uso:
-    python -m etl.trusted_to_refined.transform_fact_transacoes_financeiras
-"""
+Mapeia as dimensões pelas chaves naturais, pois trusted e refined têm
+sequências independentes. Resolve tempo_sk pela data da transação."""
 
 from __future__ import annotations
 
@@ -34,8 +15,7 @@ log = get_logger(__name__)
 
 TAMANHO_LOTE = 1000
 
-# Junta de volta com as dimensoes de trusted so para recuperar a chave
-# natural de cada uma -- e o de/para valido entre trusted e refined.
+# Recupera as chaves naturais para mapear dimensões entre camadas.
 SQL_EXTRAIR_TRUSTED = """
     SELECT t.id_transacao_natural, t.data_transacao, t.valor_bruto, t.valor_liquido,
            t.tipo_transacao, t.forma_pagamento, t.status_pagamento, t.source_system,
@@ -47,10 +27,14 @@ SQL_EXTRAIR_TRUSTED = """
       JOIN trusted.moedas m                 ON m.moeda_sk = t.moeda_sk
 """
 
-SQL_AREAS_REFINED = "SELECT id_area_natural, area_sk FROM refined.dim_area WHERE is_current = TRUE"
+SQL_AREAS_REFINED = (
+    "SELECT id_area_natural, area_sk FROM refined.dim_area WHERE is_current = TRUE"
+)
 SQL_PARCEIROS_REFINED = "SELECT id_parceiro_natural, parceiro_sk FROM refined.dim_fornecedor_cliente WHERE is_current = TRUE"
 SQL_CATEGORIAS_REFINED = "SELECT id_categoria_natural, categoria_sk FROM refined.dim_categoria_contabil WHERE is_current = TRUE"
-SQL_MOEDAS_REFINED = "SELECT codigo_iso, moeda_sk FROM refined.dim_moeda WHERE is_current = TRUE"
+SQL_MOEDAS_REFINED = (
+    "SELECT codigo_iso, moeda_sk FROM refined.dim_moeda WHERE is_current = TRUE"
+)
 SQL_TEMPO_REFINED = "SELECT data, tempo_sk FROM refined.dim_tempo"
 
 SQL_UPSERT = """
@@ -96,7 +80,11 @@ def main() -> None:
                 log.error(
                     "Dimensoes de refined incompletas (areas=%d, parceiros=%d, categorias=%d, "
                     "moedas=%d, tempo=%d) -- rode as transformacoes/seeds de dimensao antes",
-                    len(areas), len(parceiros), len(categorias), len(moedas), len(tempos),
+                    len(areas),
+                    len(parceiros),
+                    len(categorias),
+                    len(moedas),
+                    len(tempos),
                 )
                 return
 
@@ -124,17 +112,33 @@ def main() -> None:
                 log.warning(
                     "Transacao %s ignorada: dimensao nao resolvida "
                     "(tempo=%s, area=%s, parceiro=%s, categoria=%s, moeda=%s)",
-                    row["id_transacao_natural"], tempo_sk, area_sk, parceiro_sk, categoria_sk, moeda_sk,
+                    row["id_transacao_natural"],
+                    tempo_sk,
+                    area_sk,
+                    parceiro_sk,
+                    categoria_sk,
+                    moeda_sk,
                 )
                 sem_dimensao += 1
                 continue
 
-            linhas.append((
-                row["id_transacao_natural"], tempo_sk, area_sk, parceiro_sk, categoria_sk, moeda_sk,
-                row["valor_bruto"], row["valor_liquido"],
-                row["tipo_transacao"], row["forma_pagamento"], row["status_pagamento"],
-                row["source_system"], batch_id,
-            ))
+            linhas.append(
+                (
+                    row["id_transacao_natural"],
+                    tempo_sk,
+                    area_sk,
+                    parceiro_sk,
+                    categoria_sk,
+                    moeda_sk,
+                    row["valor_bruto"],
+                    row["valor_liquido"],
+                    row["tipo_transacao"],
+                    row["forma_pagamento"],
+                    row["status_pagamento"],
+                    row["source_system"],
+                    batch_id,
+                )
+            )
 
         with raw_conn.cursor() as cur:
             execute_values(cur, SQL_UPSERT, linhas, page_size=TAMANHO_LOTE)
@@ -143,11 +147,14 @@ def main() -> None:
         log.info(
             "trusted.transacoes_financeiras -> refined.fact_transacoes_financeiras concluido: "
             "%d linha(s) carregada(s) (upsert), %d ignorada(s) por dimensao nao resolvida",
-            len(linhas), sem_dimensao,
+            len(linhas),
+            sem_dimensao,
         )
     except Exception:
         raw_conn.rollback()
-        log.exception("Falha na transformacao -- rollback aplicado, nada foi persistido")
+        log.exception(
+            "Falha na transformacao -- rollback aplicado, nada foi persistido"
+        )
         raise
     finally:
         raw_conn.close()

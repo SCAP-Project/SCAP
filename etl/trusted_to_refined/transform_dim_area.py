@@ -1,17 +1,4 @@
-"""Transformacao trusted -> refined: trusted.areas -> refined.dim_area.
-
-refined tem chaves substitutas PROPRIAS (nao reaproveita trusted.area_sk) --
-o de/para entre camadas e sempre por chave natural (id_area_natural). Copia
-TODAS as versoes de trusted (nao so is_current=TRUE), preservando o
-historico de SCD2 tambem em refined.
-
-UPSERT idempotente por (id_area_natural, vigencia_inicio).
-
-Pre-requisito: transform_areas.py (camada trusted) ja executado.
-
-Uso:
-    python -m etl.trusted_to_refined.transform_dim_area
-"""
+"""Replica as versões de áreas de trusted em refined.dim_area."""
 
 from __future__ import annotations
 
@@ -63,10 +50,14 @@ def main() -> None:
             execute_values(cur, SQL_UPSERT, linhas)
 
         raw_conn.commit()
-        log.info("trusted.areas -> refined.dim_area concluido: %d linha(s)", len(linhas))
+        log.info(
+            "trusted.areas -> refined.dim_area concluido: %d linha(s)", len(linhas)
+        )
     except Exception:
         raw_conn.rollback()
-        log.exception("Falha na transformacao -- rollback aplicado, nada foi persistido")
+        log.exception(
+            "Falha na transformacao -- rollback aplicado, nada foi persistido"
+        )
         raise
     finally:
         raw_conn.close()

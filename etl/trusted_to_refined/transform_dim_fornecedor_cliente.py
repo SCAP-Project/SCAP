@@ -1,18 +1,4 @@
-"""Transformacao trusted -> refined: trusted.fornecedores_clientes -> refined.dim_fornecedor_cliente.
-
-Mesmo padrao de transform_dim_area.py: chave substituta propria em refined,
-de/para por chave natural (id_parceiro_natural), copia todo o historico de
-trusted. Dois nomes de coluna mudam nesta camada: nome_fornecedor ->
-nome_parceiro e tipo_fornecedor -> tipo_parceiro (mais generico, ja que o
-mesmo parceiro pode ser CLIENTE, FORNECEDOR ou AMBOS).
-
-UPSERT idempotente por (id_parceiro_natural, vigencia_inicio).
-
-Pre-requisito: transform_fornecedores_clientes.py (camada trusted) ja executado.
-
-Uso:
-    python -m etl.trusted_to_refined.transform_dim_fornecedor_cliente
-"""
+"""Replica as versões de parceiros de trusted em refined.dim_fornecedor_cliente."""
 
 from __future__ import annotations
 
@@ -84,7 +70,9 @@ def main() -> None:
         )
     except Exception:
         raw_conn.rollback()
-        log.exception("Falha na transformacao -- rollback aplicado, nada foi persistido")
+        log.exception(
+            "Falha na transformacao -- rollback aplicado, nada foi persistido"
+        )
         raise
     finally:
         raw_conn.close()

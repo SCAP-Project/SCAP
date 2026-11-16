@@ -1,19 +1,6 @@
-"""Carga da camada RAW: CSVs locais -> tabelas raw.* no RDS PostgreSQL.
+"""Carrega data/raw/<entidade> em raw.<entidade> por COPY FROM STDIN.
 
-Le os CSVs gerados em data/raw/<entidade>/ e carrega em raw.<entidade> via
-COPY ... FROM STDIN (client-side), compativel com o Amazon RDS (o RDS nao
-enxerga o filesystem local, entao COPY FROM '<caminho>' server-side nao
-funciona).
-
-Os CSVs ja sao gerados com TODAS as colunas da tabela, inclusive os metadados
-de ingestao (ingestion_id, ingestion_ts, source_system, source_entity,
-row_seq, raw_row_hash). Portanto a carga e uma copia direta, mapeada pelo
-cabecalho do CSV (independente da ordem das colunas na tabela).
-
-Uso:
-    python -m etl.load_raw.load_raw_csv_to_postgres              # trunca e recarrega
-    python -m etl.load_raw.load_raw_csv_to_postgres --no-truncate  # apenas anexa
-"""
+Mapeia as colunas pelo cabeçalho do CSV. --no-truncate evita a limpeza inicial."""
 
 from __future__ import annotations
 
@@ -25,9 +12,7 @@ from etl.config import get_engine, get_logger, settings
 
 log = get_logger(__name__)
 
-# Entidades da camada RAW. Para cada uma:
-#   CSVs em  data/raw/<entidade>/*.csv   ->   tabela  raw.<entidade>
-# A ordem respeita dependencias logicas (dimensoes antes das transacoes).
+# Dimensões precedem as transações na carga RAW.
 ENTIDADES = [
     "areas",
     "categorias_contabeis",
@@ -101,7 +86,9 @@ def main(truncate: bool = True) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Carga da camada RAW (CSVs -> RDS PostgreSQL)")
+    parser = argparse.ArgumentParser(
+        description="Carga da camada RAW (CSVs -> RDS PostgreSQL)"
+    )
     parser.add_argument(
         "--no-truncate",
         action="store_true",

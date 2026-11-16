@@ -1,20 +1,6 @@
-"""Seed de dimensao: refined.dim_tempo (spine de datas 2023-01-01 a 2026-12-31).
+"""Preenche dim_tempo de 2023-01-01 a 2026-12-31, sem duplicar datas.
 
-Nao depende de trusted -- e uma dimensao gerada, nao extraida de origem. O
-range cobre com folga o minimo exigido (2024-01-01 a 2026-02-10, onde
-transacoes e recebimentos existem) e vai ate o fim de 2026 pra cobrir
-qualquer analise/demo feita durante o TCC.
-
-eh_feriado fica sempre FALSE: nao ha calendario de feriados moveis
-(Carnaval, Pascoa, Corpus Christi) implementado neste escopo. eh_dia_util
-considera so segunda-sexta.
-
-Sem SCD Tipo 2 (a data de um dia nunca muda). Idempotente via
-ON CONFLICT (data) DO NOTHING, inserido em lote com execute_values.
-
-Uso:
-    python -m etl.trusted_to_refined.seed_dim_tempo
-"""
+Dias úteis consideram segunda a sexta. Não há calendário de feriados."""
 
 from __future__ import annotations
 
@@ -31,12 +17,27 @@ DATA_INICIO = date(2023, 1, 1)
 DATA_FIM = date(2026, 12, 31)
 
 NOMES_MES = [
-    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+    "Janeiro",
+    "Fevereiro",
+    "Março",
+    "Abril",
+    "Maio",
+    "Junho",
+    "Julho",
+    "Agosto",
+    "Setembro",
+    "Outubro",
+    "Novembro",
+    "Dezembro",
 ]
 NOMES_DIA_SEMANA = [
-    "Segunda-feira", "Terça-feira", "Quarta-feira",
-    "Quinta-feira", "Sexta-feira", "Sábado", "Domingo",
+    "Segunda-feira",
+    "Terça-feira",
+    "Quarta-feira",
+    "Quinta-feira",
+    "Sexta-feira",
+    "Sábado",
+    "Domingo",
 ]
 
 SQL_UPSERT = """
@@ -54,22 +55,24 @@ def _gerar_linhas(batch_id: str) -> list[tuple]:
     dia_atual = DATA_INICIO
     while dia_atual <= DATA_FIM:
         weekday = dia_atual.weekday()  # 0=Segunda ... 6=Domingo
-        linhas.append((
-            dia_atual,
-            dia_atual.year,
-            1 if dia_atual.month <= 6 else 2,
-            (dia_atual.month - 1) // 3 + 1,
-            dia_atual.month,
-            NOMES_MES[dia_atual.month - 1],
-            dia_atual.day,
-            weekday + 1,
-            NOMES_DIA_SEMANA[weekday],
-            dia_atual.isocalendar()[1],
-            weekday < 5,
-            False,
-            batch_id,
-            "SEED_GERADO",
-        ))
+        linhas.append(
+            (
+                dia_atual,
+                dia_atual.year,
+                1 if dia_atual.month <= 6 else 2,
+                (dia_atual.month - 1) // 3 + 1,
+                dia_atual.month,
+                NOMES_MES[dia_atual.month - 1],
+                dia_atual.day,
+                weekday + 1,
+                NOMES_DIA_SEMANA[weekday],
+                dia_atual.isocalendar()[1],
+                weekday < 5,
+                False,
+                batch_id,
+                "SEED_GERADO",
+            )
+        )
         dia_atual += timedelta(days=1)
     return linhas
 
@@ -85,11 +88,15 @@ def main() -> None:
         raw_conn.commit()
         log.info(
             "refined.dim_tempo: %d dia(s) gerado(s) (%s a %s), duplicatas ignoradas via ON CONFLICT",
-            len(linhas), DATA_INICIO, DATA_FIM,
+            len(linhas),
+            DATA_INICIO,
+            DATA_FIM,
         )
     except Exception:
         raw_conn.rollback()
-        log.exception("Falha no seed de dim_tempo -- rollback aplicado, nada foi persistido")
+        log.exception(
+            "Falha no seed de dim_tempo -- rollback aplicado, nada foi persistido"
+        )
         raise
     finally:
         raw_conn.close()

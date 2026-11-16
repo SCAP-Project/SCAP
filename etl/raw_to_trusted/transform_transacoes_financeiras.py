@@ -1,26 +1,7 @@
-"""Transformacao raw -> trusted: raw.transacoes_financeiras -> trusted.transacoes_financeiras.
+"""Carrega transações em trusted por upsert em lote.
 
-Resolve 4 chaves estrangeiras por lookup em memoria (as dimensoes sao
-pequenas -- no maximo poucas centenas de linhas -- entao carregar cada uma
-inteira uma vez e mais barato que uma query por transacao):
-  - codigo_area_raw    -> trusted.areas.id_area_natural                     -> area_sk
-  - id_fornecedor_raw  -> trusted.fornecedores_clientes.id_parceiro_natural -> parceiro_sk
-  - id_categoria_raw   -> trusted.categorias_contabeis.id_categoria_natural -> categoria_sk
-  - moeda              -> trusted.moedas.codigo_iso                        -> moeda_sk
-
-Diferente das dimensoes (areas, categorias, fornecedores, funcionarios),
-trusted.transacoes_financeiras NAO tem SCD Tipo 2 -- e fato, nao dimensao.
-E um UPSERT simples por id_transacao_natural (INSERT ... ON CONFLICT DO
-UPDATE), feito em lote com psycopg2.extras.execute_values: com 40k+ linhas,
-um INSERT por linha seria dezenas de minutos so em latencia de rede ate o
-RDS (via tunel SSH); em lotes de 1000, sao poucas dezenas de round-trips.
-
-Pre-requisito: transform_areas.py, transform_categorias_contabeis.py,
-transform_fornecedores_clientes.py e seed_moedas.py ja executados.
-
-Uso:
-    python -m etl.raw_to_trusted.transform_transacoes_financeiras
-"""
+Resolve área, parceiro, categoria e moeda pelas chaves naturais.
+Requer as dimensões correspondentes carregadas."""
 
 from __future__ import annotations
 
@@ -45,8 +26,7 @@ def _limpar_descricao(texto: str) -> str:
 
 SQL_TOTAL_RAW = "SELECT count(*) FROM raw.transacoes_financeiras"
 
-# DISTINCT ON + ORDER BY ingestion_ts DESC: fica com a linha mais recente por
-# transacao, caso raw tenha duplicata de id_transacao_raw.
+# Mantém a ingestão mais recente por transação.
 SQL_EXTRAIR_RAW = """
     SELECT DISTINCT ON (id_transacao_raw)
            id_transacao_raw,
@@ -77,14 +57,14 @@ SQL_EXTRAIR_RAW = """
      ORDER BY id_transacao_raw, ingestion_ts DESC
 """
 
-SQL_AREAS_ATUAIS = "SELECT id_area_natural, area_sk FROM trusted.areas WHERE is_current = TRUE"
-SQL_PARCEIROS_ATUAIS = (
-    "SELECT id_parceiro_natural, parceiro_sk FROM trusted.fornecedores_clientes WHERE is_current = TRUE"
+SQL_AREAS_ATUAIS = (
+    "SELECT id_area_natural, area_sk FROM trusted.areas WHERE is_current = TRUE"
 )
-SQL_CATEGORIAS_ATUAIS = (
-    "SELECT id_categoria_natural, categoria_sk FROM trusted.categorias_contabeis WHERE is_current = TRUE"
+SQL_PARCEIROS_ATUAIS = "SELECT id_parceiro_natural, parceiro_sk FROM trusted.fornecedores_clientes WHERE is_current = TRUE"
+SQL_CATEGORIAS_ATUAIS = "SELECT id_categoria_natural, categoria_sk FROM trusted.categorias_contabeis WHERE is_current = TRUE"
+SQL_MOEDAS_ATUAIS = (
+    "SELECT codigo_iso, moeda_sk FROM trusted.moedas WHERE is_current = TRUE"
 )
-SQL_MOEDAS_ATUAIS = "SELECT codigo_iso, moeda_sk FROM trusted.moedas WHERE is_current = TRUE"
 
 SQL_UPSERT = """
     INSERT INTO trusted.transacoes_financeiras
@@ -130,7 +110,10 @@ def main() -> None:
                 log.error(
                     "Dimensoes de apoio incompletas (areas=%d, parceiros=%d, categorias=%d, moedas=%d) "
                     "-- rode as transformacoes de dimensao antes",
-                    len(areas), len(parceiros), len(categorias), len(moedas),
+                    len(areas),
+                    len(parceiros),
+                    len(categorias),
+                    len(moedas),
                 )
                 return
 
@@ -145,11 +128,15 @@ def main() -> None:
             log.warning(
                 "raw.transacoes_financeiras: %d linha(s) ignorada(s) por campo nulo/invalido "
                 "ou id_transacao_raw duplicado (%d de %d validas)",
-                total_raw - len(raw_rows), len(raw_rows), total_raw,
+                total_raw - len(raw_rows),
+                len(raw_rows),
+                total_raw,
             )
 
         if not raw_rows:
-            log.warning("raw.transacoes_financeiras nao tem nenhuma linha valida -- nada a transformar")
+            log.warning(
+                "raw.transacoes_financeiras nao tem nenhuma linha valida -- nada a transformar"
+            )
             return
 
         linhas = []
@@ -164,19 +151,34 @@ def main() -> None:
                 log.warning(
                     "Transacao %s ignorada: dimensao nao resolvida "
                     "(area=%s, parceiro=%s, categoria=%s, moeda=%s)",
-                    row["id_transacao_raw"], area_sk, parceiro_sk, categoria_sk, moeda_sk,
+                    row["id_transacao_raw"],
+                    area_sk,
+                    parceiro_sk,
+                    categoria_sk,
+                    moeda_sk,
                 )
                 sem_dimensao += 1
                 continue
 
-            linhas.append((
-                row["id_transacao_raw"], area_sk, parceiro_sk, categoria_sk, moeda_sk,
-                row["data_transacao"], row["data_competencia"],
-                row["valor_bruto"], row["valor_liquido"],
-                row["tipo_transacao"], row["forma_pagamento"], row["status_pagamento"],
-                _limpar_descricao(row["descricao"]),
-                batch_id, row["source_system"],
-            ))
+            linhas.append(
+                (
+                    row["id_transacao_raw"],
+                    area_sk,
+                    parceiro_sk,
+                    categoria_sk,
+                    moeda_sk,
+                    row["data_transacao"],
+                    row["data_competencia"],
+                    row["valor_bruto"],
+                    row["valor_liquido"],
+                    row["tipo_transacao"],
+                    row["forma_pagamento"],
+                    row["status_pagamento"],
+                    _limpar_descricao(row["descricao"]),
+                    batch_id,
+                    row["source_system"],
+                )
+            )
 
         with raw_conn.cursor() as cur:
             execute_values(cur, SQL_UPSERT, linhas, page_size=TAMANHO_LOTE)
@@ -185,11 +187,14 @@ def main() -> None:
         log.info(
             "raw.transacoes_financeiras -> trusted.transacoes_financeiras concluido: "
             "%d linha(s) carregada(s) (upsert), %d ignorada(s) por dimensao nao resolvida",
-            len(linhas), sem_dimensao,
+            len(linhas),
+            sem_dimensao,
         )
     except Exception:
         raw_conn.rollback()
-        log.exception("Falha na transformacao -- rollback aplicado, nada foi persistido")
+        log.exception(
+            "Falha na transformacao -- rollback aplicado, nada foi persistido"
+        )
         raise
     finally:
         raw_conn.close()

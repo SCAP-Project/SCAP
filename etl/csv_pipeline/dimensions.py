@@ -10,8 +10,14 @@ def stable_keys(frame, previous, natural, surrogate):
     if previous is not None and not previous.empty:
         removed = set(previous[natural]) - set(result[natural])
         if removed:
-            raise ValueError(f"Remocao de fatos nao suportada ({natural}); use outra pasta data para outro dataset")
-    old = {} if previous is None or previous.empty else dict(zip(previous[natural], previous[surrogate].astype(int)))
+            raise ValueError(
+                f"Remocao de fatos nao suportada ({natural}); use outra pasta data para outro dataset"
+            )
+    old = (
+        {}
+        if previous is None or previous.empty
+        else dict(zip(previous[natural], previous[surrogate].astype(int)))
+    )
     next_key = max(old.values(), default=0) + 1
     keys = []
     for value in result[natural]:
@@ -37,8 +43,13 @@ def sync_dimension(incoming, previous, natural, surrogate, observed_on: date):
     for row in records:
         row[surrogate] = int(row[surrogate])
         row["is_current"] = str(row["is_current"]).lower() == "true"
-        row["vigencia_fim"] = "" if pd.isna(row["vigencia_fim"]) else row["vigencia_fim"]
-    if any(str(row["vigencia_inicio"]) > today or str(row["vigencia_fim"]) > today for row in records):
+        row["vigencia_fim"] = (
+            "" if pd.isna(row["vigencia_fim"]) else row["vigencia_fim"]
+        )
+    if any(
+        str(row["vigencia_inicio"]) > today or str(row["vigencia_fim"]) > today
+        for row in records
+    ):
         raise ValueError("Data de observacao anterior ao historico existente")
     current = {}
     for row in records:
@@ -57,8 +68,15 @@ def sync_dimension(incoming, previous, natural, surrogate, observed_on: date):
             continue
         if existing:
             existing.update(is_current=False, vigencia_fim=today)
-        new = dict(row, **{surrogate: next_key, "vigencia_inicio": today,
-                          "vigencia_fim": "", "is_current": True})
+        new = dict(
+            row,
+            **{
+                surrogate: next_key,
+                "vigencia_inicio": today,
+                "vigencia_fim": "",
+                "is_current": True,
+            },
+        )
         next_key += 1
         records.append(new)
     present = set(incoming[natural])
@@ -80,7 +98,10 @@ def resolve_fk(frame, dimension, natural, surrogate, previous=None):
         old_key = result.id_transacao_natural.map(prior[surrogate].astype(int))
         keep = old_natural.eq(result[natural]) & old_key.notna()
         result.loc[keep, surrogate] = old_key[keep]
-    if result[surrogate].isna().any() or not result[surrogate].isin(dimension[surrogate]).all():
+    if (
+        result[surrogate].isna().any()
+        or not result[surrogate].isin(dimension[surrogate]).all()
+    ):
         raise ValueError(f"Dimensao nao resolvida: {natural}")
     result[surrogate] = result[surrogate].astype(int)
     return result

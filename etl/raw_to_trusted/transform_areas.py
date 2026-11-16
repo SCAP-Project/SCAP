@@ -1,28 +1,6 @@
-"""Transformacao raw -> trusted: raw.areas -> trusted.areas (SCD Tipo 2).
+"""Versiona áreas em trusted por SCD2, usando codigo_area como chave natural.
 
-raw.areas guarda sempre o snapshot MAIS RECENTE da origem (o loader trunca e
-recarrega a cada execucao); quem preserva o historico de mudanca de nome ou
-gestor de uma area e esta tabela, via SCD Tipo 2 (vigencia_inicio /
-vigencia_fim / is_current).
-
-Chave natural: trusted.areas.id_area_natural = raw.areas.codigo_area (ex.:
-'FIN'), NAO raw.areas.id_area_raw (id sequencial sem significado fora do
-raw). E o codigo que raw.transacoes_financeiras.codigo_area_raw referencia
-(ver comentario em sql/ddl/02_create_trusted_tables.sql).
-
-Regra de versionamento (idempotente -- pode rodar quantas vezes quiser):
-  - Area nao existe em trusted ainda            -> insere versao nova.
-  - Existe e nome/gestor/email mudou desde a
-    versao atual (is_current=TRUE)              -> fecha a versao atual
-                                                     (vigencia_fim=hoje) e
-                                                     abre uma nova.
-  - Existe e nada mudou                          -> no-op.
-
-Pre-requisito: sql/ddl/02_create_trusted_tables.sql aplicado.
-
-Uso:
-    python -m etl.raw_to_trusted.transform_areas
-"""
+Mudanças nos atributos fecham a versão atual e abrem outra; linhas iguais não mudam."""
 
 from __future__ import annotations
 
@@ -35,13 +13,12 @@ from etl.config import get_connection, get_logger
 
 log = get_logger(__name__)
 
-# Atributos monitorados p/ SCD2: mudanca em qualquer um fecha a versao atual.
+# Atributos que iniciam uma nova versão SCD2.
 COLUNAS_VERSIONADAS = ("nome_area", "gestor_responsavel", "email_gestor")
 
 SQL_TOTAL_RAW = "SELECT count(*) FROM raw.areas"
 
-# DISTINCT ON + ORDER BY ingestion_ts DESC: se por algum motivo raw tiver mais
-# de uma linha para o mesmo codigo_area, fica com a mais recente.
+# Mantém a ingestão mais recente por chave natural.
 SQL_EXTRAIR_RAW = """
     SELECT DISTINCT ON (codigo_area)
            codigo_area, nome_area, gestor_responsavel, email_gestor, source_system
@@ -92,14 +69,19 @@ def main() -> None:
         if len(raw_rows) < total_raw:
             log.warning(
                 "raw.areas: %d linha(s) ignorada(s) por codigo_area/nome_area nulo ou duplicado (%d de %d validas)",
-                total_raw - len(raw_rows), len(raw_rows), total_raw,
+                total_raw - len(raw_rows),
+                len(raw_rows),
+                total_raw,
             )
 
         if not raw_rows:
             log.warning("raw.areas nao tem nenhuma linha valida -- nada a transformar")
             return
 
-        atuais = {r["id_area_natural"]: r for r in conn.execute(text(SQL_ATUAIS_TRUSTED)).mappings()}
+        atuais = {
+            r["id_area_natural"]: r
+            for r in conn.execute(text(SQL_ATUAIS_TRUSTED)).mappings()
+        }
 
         for row in raw_rows:
             codigo = row["codigo_area"]
@@ -127,7 +109,9 @@ def main() -> None:
 
     log.info(
         "raw.areas -> trusted.areas concluido: %d nova(s), %d versionada(s) (SCD2), %d inalterada(s)",
-        inseridas, versionadas, inalteradas,
+        inseridas,
+        versionadas,
+        inalteradas,
     )
 
 

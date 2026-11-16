@@ -1,27 +1,7 @@
-"""Executa um arquivo .sql no banco, opcionalmente como outro usuario.
+"""Executa arquivos SQL em sequência no PostgreSQL.
 
-Existe porque nem toda maquina do time tem o cliente `psql` instalado -- este
-script usa o psycopg2 que ja vem no requirements.txt. Util principalmente para
-DDL e migracoes, que exigem o usuario MASTER (scap_admin): as tabelas pertencem
-a ele, e o svc_etl do .env so tem DML (grupo app_etl).
-
-A senha nunca vem por argumento de linha de comando (ficaria no historico do
-shell): ou e digitada no prompt, ou vem da variavel de ambiente SQL_PASSWORD.
-
-Uso:
-    # como o usuario do .env (svc_etl)
-    python -m etl.utils.run_sql sql/ddl/00_create_schemas.sql
-
-    # como outro usuario -- pede a senha no prompt
-    python -m etl.utils.run_sql sql/migrations/2026_08_15_fase_b.sql --user scap_admin
-
-    # varios arquivos na ordem, na mesma conexao
-    python -m etl.utils.run_sql sql/ddl/02_create_trusted_tables.sql \\
-                                sql/ddl/03_create_refined_tables.sql --user scap_admin
-
-    # so mostra o que seria executado, sem tocar no banco
-    python -m etl.utils.run_sql sql/ddl/05_create_ml_tables.sql --dry-run
-"""
+Use --user para outro usuário e --dry-run para apenas exibir o SQL.
+A senha vem do prompt ou de SQL_PASSWORD, nunca de argumento do shell."""
 
 from __future__ import annotations
 
@@ -39,14 +19,14 @@ log = get_logger(__name__)
 
 
 def executar(caminhos: list[Path], usuario: str, senha: str) -> None:
-    """Aplica os arquivos em sequencia, na mesma conexao.
-
-    Varios arquivos numa chamada so importam quando um depende do outro --
-    dropar e recriar as camadas, por exemplo, tem que acontecer na ordem certa
-    e sem janela entre os passos.
-    """
-    log.info("Conectando em %s:%s/%s como '%s'",
-             settings.db_host, settings.db_port, settings.db_name, usuario)
+    """Aplica os arquivos na mesma conexão, respeitando a ordem recebida."""
+    log.info(
+        "Conectando em %s:%s/%s como '%s'",
+        settings.db_host,
+        settings.db_port,
+        settings.db_name,
+        usuario,
+    )
 
     conn = psycopg2.connect(
         host=settings.db_host,
@@ -54,13 +34,10 @@ def executar(caminhos: list[Path], usuario: str, senha: str) -> None:
         dbname=settings.db_name,
         user=usuario,
         password=senha,
-        # RDS exige SSL. Sem isso, sslmode='prefer' (padrao do libpq) tenta a
-        # conexao SSL e, se falhar por qualquer motivo, tenta de novo sem SSL --
-        # e o pg_hba do RDS rejeita a segunda tentativa por falta de
-        # criptografia, poluindo o erro real com uma mensagem secundaria.
+        # Exige SSL na conexão ao RDS.
         sslmode="require",
     )
-    # autocommit para o proprio arquivo controlar as transacoes (BEGIN/COMMIT).
+    # Cada arquivo SQL controla suas transações com BEGIN/COMMIT.
     conn.autocommit = True
     try:
         for caminho in caminhos:
@@ -68,7 +45,6 @@ def executar(caminhos: list[Path], usuario: str, senha: str) -> None:
             del conn.notices[:]
             with conn.cursor() as cur:
                 cur.execute(caminho.read_text(encoding="utf-8"))
-                # NOTICE do servidor ("already exists, skipping", RAISE NOTICE...)
                 for aviso in conn.notices:
                     log.info("    %s", aviso.strip())
             log.info("    OK")
@@ -81,7 +57,9 @@ def executar(caminhos: list[Path], usuario: str, senha: str) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Executa arquivos .sql no banco do projeto")
+    parser = argparse.ArgumentParser(
+        description="Executa arquivos .sql no banco do projeto"
+    )
     parser.add_argument(
         "arquivos",
         type=Path,
@@ -125,12 +103,7 @@ def main() -> int:
 
 
 def _pedir_senha(usuario: str, tentativas: int = 3) -> str:
-    """Pede a senha no prompt, tolerando linhas vazias no buffer do stdin.
-
-    Colar um comando multi-linha no PowerShell deixa o newline final no buffer;
-    o getpass seguinte le esse newline e devolve string vazia. Em vez de abortar
-    (o que obriga a redigitar o comando inteiro), simplesmente perguntamos de novo.
-    """
+    """Solicita uma senha não vazia, ignorando quebras de linha pendentes no terminal."""
     for _ in range(tentativas):
         senha = getpass.getpass(f"Senha de '{usuario}': ")
         if senha:

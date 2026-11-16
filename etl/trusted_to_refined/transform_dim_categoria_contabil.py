@@ -1,14 +1,4 @@
-"""Transformacao trusted -> refined: trusted.categorias_contabeis -> refined.dim_categoria_contabil.
-
-Mesmo padrao de transform_dim_area.py: chave substituta propria em refined,
-de/para por chave natural (id_categoria_natural), copia todo o historico de
-trusted. UPSERT idempotente por (id_categoria_natural, vigencia_inicio).
-
-Pre-requisito: transform_categorias_contabeis.py (camada trusted) ja executado.
-
-Uso:
-    python -m etl.trusted_to_refined.transform_dim_categoria_contabil
-"""
+"""Replica as versões de categorias de trusted em refined.dim_categoria_contabil."""
 
 from __future__ import annotations
 
@@ -52,7 +42,9 @@ def main() -> None:
             linhas = [tuple(row) + (batch_id,) for row in cur.fetchall()]
 
         if not linhas:
-            log.warning("trusted.categorias_contabeis esta vazia -- rode transform_categorias_contabeis.py antes")
+            log.warning(
+                "trusted.categorias_contabeis esta vazia -- rode transform_categorias_contabeis.py antes"
+            )
             return
 
         with raw_conn.cursor() as cur:
@@ -65,7 +57,9 @@ def main() -> None:
         )
     except Exception:
         raw_conn.rollback()
-        log.exception("Falha na transformacao -- rollback aplicado, nada foi persistido")
+        log.exception(
+            "Falha na transformacao -- rollback aplicado, nada foi persistido"
+        )
         raise
     finally:
         raw_conn.close()

@@ -1,27 +1,6 @@
-"""Transformacao raw -> trusted: raw.funcionarios -> trusted.funcionarios (SCD Tipo 2).
+"""Versiona funcionários em trusted por SCD2 e resolve a área pelo departamento.
 
-Chave natural: trusted.id_funcionario_natural = str(raw.id_funcionario_raw).
-
-raw.funcionarios.departamento guarda o CODIGO do departamento (ex.: 'FIN'),
-o mesmo codigo de trusted.areas.id_area_natural -- por isso essa
-transformacao depende de transform_areas.py ja ter rodado (precisa existir
-uma versao is_current=TRUE em trusted.areas pra cada departamento usado).
-
-data_admissao e salario chegam como TEXT no raw (formato ISO 'YYYY-MM-DD' e
-numero decimal com ponto); o cast pra date/numeric e feito no proprio SELECT.
-
-Mesma regra de versionamento das transformacoes anteriores (idempotente):
-  - Funcionario nao existe em trusted        -> insere versao nova.
-  - Existe e algum atributo monitorado mudou  -> fecha a versao atual e abre
-                                                   uma nova.
-  - Existe e nada mudou                       -> no-op.
-
-Pre-requisito: transform_areas.py ja executado; sql/ddl/02_create_trusted_tables.sql
-aplicado.
-
-Uso:
-    python -m etl.raw_to_trusted.transform_funcionarios
-"""
+Requer as áreas carregadas; a chave natural é id_funcionario_raw."""
 
 from __future__ import annotations
 
@@ -34,13 +13,20 @@ from etl.config import get_connection, get_logger
 
 log = get_logger(__name__)
 
-# Atributos monitorados p/ SCD2 (ja com area_sk resolvido).
-COLUNAS_VERSIONADAS = ("nome", "cpf", "cargo", "area_sk", "data_admissao", "tipo_contrato", "salario")
+# Atributos que iniciam uma nova versão SCD2.
+COLUNAS_VERSIONADAS = (
+    "nome",
+    "cpf",
+    "cargo",
+    "area_sk",
+    "data_admissao",
+    "tipo_contrato",
+    "salario",
+)
 
 SQL_TOTAL_RAW = "SELECT count(*) FROM raw.funcionarios"
 
-# DISTINCT ON + ORDER BY ingestion_ts DESC: fica com a linha mais recente por
-# funcionario, caso raw tenha duplicata de id_funcionario_raw.
+# Mantém a ingestão mais recente por funcionário.
 SQL_EXTRAIR_RAW = """
     SELECT DISTINCT ON (id_funcionario_raw)
            id_funcionario_raw, nome, cpf, cargo, departamento,
@@ -98,9 +84,14 @@ def main() -> None:
     inseridas = versionadas = inalteradas = sem_area = 0
 
     with get_connection() as conn:
-        areas_atuais = {r["id_area_natural"]: r["area_sk"] for r in conn.execute(text(SQL_AREAS_ATUAIS)).mappings()}
+        areas_atuais = {
+            r["id_area_natural"]: r["area_sk"]
+            for r in conn.execute(text(SQL_AREAS_ATUAIS)).mappings()
+        }
         if not areas_atuais:
-            log.error("trusted.areas nao tem nenhuma versao vigente -- rode transform_areas.py antes")
+            log.error(
+                "trusted.areas nao tem nenhuma versao vigente -- rode transform_areas.py antes"
+            )
             return
 
         total_raw = conn.execute(text(SQL_TOTAL_RAW)).scalar_one()
@@ -109,21 +100,29 @@ def main() -> None:
             log.warning(
                 "raw.funcionarios: %d linha(s) ignorada(s) por campo nulo/invalido "
                 "ou id_funcionario_raw duplicado (%d de %d validas)",
-                total_raw - len(raw_rows), len(raw_rows), total_raw,
+                total_raw - len(raw_rows),
+                len(raw_rows),
+                total_raw,
             )
 
         if not raw_rows:
-            log.warning("raw.funcionarios nao tem nenhuma linha valida -- nada a transformar")
+            log.warning(
+                "raw.funcionarios nao tem nenhuma linha valida -- nada a transformar"
+            )
             return
 
-        atuais = {r["id_funcionario_natural"]: r for r in conn.execute(text(SQL_ATUAIS_TRUSTED)).mappings()}
+        atuais = {
+            r["id_funcionario_natural"]: r
+            for r in conn.execute(text(SQL_ATUAIS_TRUSTED)).mappings()
+        }
 
         for row in raw_rows:
             area_sk = areas_atuais.get(row["departamento"])
             if area_sk is None:
                 log.warning(
                     "Funcionario %s ignorado: departamento '%s' nao existe em trusted.areas",
-                    row["id_funcionario_raw"], row["departamento"],
+                    row["id_funcionario_raw"],
+                    row["departamento"],
                 )
                 sem_area += 1
                 continue
@@ -152,7 +151,9 @@ def main() -> None:
                 conn.execute(text(SQL_INSERIR_VERSAO), params)
                 inseridas += 1
             elif _mudou(normalizado, atual):
-                conn.execute(text(SQL_FECHAR_VERSAO), {"id_natural": id_natural, "hoje": hoje})
+                conn.execute(
+                    text(SQL_FECHAR_VERSAO), {"id_natural": id_natural, "hoje": hoje}
+                )
                 conn.execute(text(SQL_INSERIR_VERSAO), params)
                 versionadas += 1
             else:
@@ -161,7 +162,10 @@ def main() -> None:
     log.info(
         "raw.funcionarios -> trusted.funcionarios concluido: "
         "%d nova(s), %d versionada(s) (SCD2), %d inalterada(s), %d sem area valida",
-        inseridas, versionadas, inalteradas, sem_area,
+        inseridas,
+        versionadas,
+        inalteradas,
+        sem_area,
     )
 
 

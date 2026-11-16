@@ -14,11 +14,9 @@ GENERATORS = Path(__file__).resolve().parents[1] / "data_generation/generators"
 
 
 def generate_data(data_dir: Path):
-    """Ordem: transacoes -> liquidacoes -> parceiros derivados do historico.
+    """Gera transações, liquidações e parceiros em uma pasta temporária.
 
-    Nenhum gerador precisa importar settings, carregar .env ou abrir conexao.
-    A pasta temporaria impede publicar uma geracao que falhou pela metade.
-    """
+    Publica os CSVs apenas após todos os geradores terminarem."""
     data_dir = data_dir.resolve()
     previous_cwd = Path.cwd()
     with tempfile.TemporaryDirectory(prefix="scap-generation-") as directory:
@@ -28,12 +26,30 @@ def generate_data(data_dir: Path):
         try:
             os.chdir(workspace)
             with contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):
-                notebook = json.loads((GENERATORS / "dados_transacoes_financeiras.ipynb").read_text(encoding="utf-8"))
+                notebook = json.loads(
+                    (GENERATORS / "dados_transacoes_financeiras.ipynb").read_text(
+                        encoding="utf-8"
+                    )
+                )
                 namespace = {"display": lambda *args, **kwargs: None}
                 for index, cell in enumerate(notebook["cells"]):
                     if cell["cell_type"] == "code":
-                        exec(compile("".join(cell["source"]), f"transacoes_cell_{index}", "exec"), namespace)
-                for entity in ["areas", "categorias_contabeis", "funcionarios", "pagamentos", "recebimentos", "fornecedores_clientes"]:
+                        exec(
+                            compile(
+                                "".join(cell["source"]),
+                                f"transacoes_cell_{index}",
+                                "exec",
+                            ),
+                            namespace,
+                        )
+                for entity in [
+                    "areas",
+                    "categorias_contabeis",
+                    "funcionarios",
+                    "pagamentos",
+                    "recebimentos",
+                    "fornecedores_clientes",
+                ]:
                     runpy.run_path(str(GENERATORS / f"dados_raw_{entity}.py"))
         finally:
             os.chdir(previous_cwd)

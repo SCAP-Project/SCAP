@@ -1,9 +1,4 @@
-"""Conexão com o RDS PostgreSQL via SQLAlchemy.
-
-Expõe um engine único (pool reutilizável) e um context manager de conexão.
-Todos os scripts ETL devem obter conexões daqui, nunca criando psycopg2
-diretamente.
-"""
+"""Conexões PostgreSQL com engine compartilhado e transações gerenciadas."""
 
 from __future__ import annotations
 
@@ -25,14 +20,17 @@ def get_engine() -> Engine:
     """Retorna o engine SQLAlchemy (criado sob demanda e reutilizado)."""
     global _engine
     if _engine is None:
-        log.info("Criando engine para %s:%s/%s", settings.db_host, settings.db_port, settings.db_name)
+        log.info(
+            "Criando engine para %s:%s/%s",
+            settings.db_host,
+            settings.db_port,
+            settings.db_name,
+        )
         _engine = create_engine(
             settings.database_url,
-            pool_pre_ping=True,  # valida a conexão antes de usar (resiliente a drops do RDS)
+            pool_pre_ping=True,
             future=True,
-            # RDS exige SSL. Sem isso, sslmode='prefer' tenta com e sem SSL e,
-            # numa falha de auth, mistura os dois erros na mesma mensagem
-            # (ver etl/utils/run_sql.py).
+            # Exige SSL na conexão ao RDS.
             connect_args={"sslmode": "require"},
         )
     return _engine
@@ -61,5 +59,4 @@ def check_connection() -> str:
 
 
 if __name__ == "__main__":
-    # Teste rápido de conectividade: python -m etl.config.database
     check_connection()

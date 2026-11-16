@@ -1,7 +1,4 @@
 #!/usr/bin/env python
-# coding: utf-8
-
-# In[1]:
 
 
 import pandas as pd
@@ -17,24 +14,16 @@ SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
 
-QTD_RECEBIMENTOS = 18_200
-SOURCE_SYSTEM    = 'ERP_CORPORATIVO'
-SOURCE_ENTITY    = 'recebimentos'
-INGESTION_ID     = str(uuid.uuid4())
-INGESTION_TS     = datetime(2026, 1, 10, 10, 0, 0).strftime('%Y-%m-%dT%H:%M:%S.000Z')
+SOURCE_SYSTEM = "ERP_CORPORATIVO"
+SOURCE_ENTITY = "recebimentos"
+INGESTION_ID = str(uuid.uuid4())
+INGESTION_TS = datetime(2026, 1, 10, 10, 0, 0).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
-print(f'ingestion_id : {INGESTION_ID}')
-print(f'ingestion_ts : {INGESTION_TS}')
-
-
-# In[2]:
+print(f"ingestion_id : {INGESTION_ID}")
+print(f"ingestion_ts : {INGESTION_TS}")
 
 
-# A raiz do projeto e localizada subindo ate achar a pasta 'sql' (marcador do
-# repo). Antes era os.path.join(os.getcwd(), '..', '..'), que so acertava
-# quando o script rodava a partir de etl/data_generation/ -- rodando de
-# generators/ (onde o arquivo mora) os CSVs iam parar em etl/data/.
-def achar_raiz(marcador='sql'):
+def achar_raiz(marcador="sql"):
     caminho = os.path.abspath(os.getcwd())
     while True:
         if os.path.isdir(os.path.join(caminho, marcador)):
@@ -47,120 +36,132 @@ def achar_raiz(marcador='sql'):
             )
         caminho = pai
 
-workspace = achar_raiz()
-fato_dir  = os.path.join(workspace, 'data', 'raw', 'transacoes_financeiras')
-fato_csvs = sorted(glob.glob(os.path.join(fato_dir, '*.csv')))
 
-dfs = [pd.read_csv(f, usecols=[
-    'id_transacao_raw', 'data_transacao', 'valor_liquido',
-    'forma_pagamento', 'tipo_transacao', 'status_pagamento'
-]) for f in fato_csvs]
+workspace = achar_raiz()
+fato_dir = os.path.join(workspace, "data", "raw", "transacoes_financeiras")
+fato_csvs = sorted(glob.glob(os.path.join(fato_dir, "*.csv")))
+
+dfs = [
+    pd.read_csv(
+        f,
+        usecols=[
+            "id_transacao_raw",
+            "data_transacao",
+            "valor_liquido",
+            "forma_pagamento",
+            "tipo_transacao",
+            "status_pagamento",
+        ],
+    )
+    for f in fato_csvs
+]
 df_fato = pd.concat(dfs, ignore_index=True)
 
-# C3: a chave da transacao e mantida no MESMO formato da tabela fato
-# ('TR-00144'). Antes era gravada como inteiro (144), o que obrigava o ETL a
-# reconstruir a chave com "'TR-' || lpad(id::text, 5, '0')" para conseguir juntar
-# pagamento e transacao -- regra fragil, espalhada, e que fazia o tipo declarado
-# no DDL (INT) mentir sobre o conteudo.
-df_fato['data_transacao']   = pd.to_datetime(df_fato['data_transacao'])
-df_fato['valor_liquido']    = df_fato['valor_liquido'].astype(float)
+df_fato["data_transacao"] = pd.to_datetime(df_fato["data_transacao"])
+df_fato["valor_liquido"] = df_fato["valor_liquido"].astype(float)
 
-print(f'Tabela fato carregada: {len(df_fato):,} registros')
-print(df_fato.groupby(['tipo_transacao', 'status_pagamento']).size().unstack(fill_value=0))
+print(f"Tabela fato carregada: {len(df_fato):,} registros")
+print(
+    df_fato.groupby(["tipo_transacao", "status_pagamento"]).size().unstack(fill_value=0)
+)
 
 
-# In[3]:
-
-
-# B5: existe recebimento se, e somente se, a receita foi liquidada -- no prazo
-# (PAGO) ou com atraso (ATRASADO). Antes o filtro era apenas
-# tipo_transacao == 'RECEITA', o que produzia 1.011 recebimentos de transacoes
-# CANCELADAS (dinheiro entrando de venda cancelada). O gerador de pagamentos ja
-# excluia CANCELADO; a assimetria entre os dois era um bug.
-df_receita = df_fato[
-    (df_fato['tipo_transacao'] == 'RECEITA') &
-    (df_fato['status_pagamento'].isin(['PAGO', 'ATRASADO']))
-].copy().reset_index(drop=True)
+# Apenas receitas pagas ou atrasadas geram recebimentos.
+df_receita = (
+    df_fato[
+        (df_fato["tipo_transacao"] == "RECEITA")
+        & (df_fato["status_pagamento"].isin(["PAGO", "ATRASADO"]))
+    ]
+    .copy()
+    .reset_index(drop=True)
+)
 total_receita = len(df_receita)
 
-# Parcelamento: parte das receitas liquidadas no prazo vira venda em 2 parcelas.
-# Antes a quantidade de extras era o que faltasse para bater a cota fixa de
-# 18.200; agora e uma taxa do proprio volume, entao o numero decorre da regra.
+# Parte das receitas pagas é dividida em duas parcelas.
 TAXA_PARCELAMENTO = 0.15
 
-df_pago_receita = df_receita[df_receita['status_pagamento'] == 'PAGO'] \
-    .sort_values('valor_liquido', ascending=False)
+df_pago_receita = df_receita[df_receita["status_pagamento"] == "PAGO"].sort_values(
+    "valor_liquido", ascending=False
+)
 
 extras_necessarios = int(round(len(df_pago_receita) * TAXA_PARCELAMENTO))
 
-print(f'Total RECEITA liquidada: {total_receita:,}')
-print(f'Parcelas adicionais ({TAXA_PARCELAMENTO:.0%} das PAGO): {extras_necessarios:,}')
+print(f"Total RECEITA liquidada: {total_receita:,}")
+print(f"Parcelas adicionais ({TAXA_PARCELAMENTO:.0%} das PAGO): {extras_necessarios:,}")
 
 df_duplicadas = df_pago_receita.head(extras_necessarios).copy()
-df_duplicadas['parcela'] = 2
-df_receita['parcela']    = 1
+df_duplicadas["parcela"] = 2
+df_receita["parcela"] = 1
 
 df_base = pd.concat([df_receita, df_duplicadas], ignore_index=True)
 df_base = df_base.sample(frac=1, random_state=SEED).reset_index(drop=True)
 
-print(f'\nBase para geração: {len(df_base):,} registros')
+print(f"\nBase para geração: {len(df_base):,} registros")
 
 
-# In[4]:
+METODOS_RECEBIMENTO = ["PIX", "TED", "BOLETO", "DEPOSITO", "TRANSFERENCIA", "CHEQUE"]
+PESOS_METODO = [0.45, 0.20, 0.18, 0.08, 0.06, 0.03]
 
-
-METODOS_RECEBIMENTO = ['PIX', 'TED', 'BOLETO', 'DEPOSITO', 'TRANSFERENCIA', 'CHEQUE']
-PESOS_METODO        = [0.45, 0.20, 0.18, 0.08, 0.06, 0.03]
 
 def gerar_comprovante(id_rec, id_trans, data_str):
-    conteudo = f'REC-{id_rec}-{id_trans}-{data_str}'
-    return 'RECB-' + hashlib.md5(conteudo.encode()).hexdigest()[:11].upper()
+    conteudo = f"REC-{id_rec}-{id_trans}-{data_str}"
+    return "RECB-" + hashlib.md5(conteudo.encode()).hexdigest()[:11].upper()
+
 
 def gerar_hash(row_dict):
-    campos = ['id_recebimento_raw', 'id_transacao_raw', 'data_recebimento', 'valor_recebido', 'metodo_recebimento']
-    conteudo = '|'.join(str(row_dict.get(c, '')) for c in campos)
-    return hashlib.sha256(conteudo.encode('utf-8')).hexdigest()
+    campos = [
+        "id_recebimento_raw",
+        "id_transacao_raw",
+        "data_recebimento",
+        "valor_recebido",
+        "metodo_recebimento",
+    ]
+    conteudo = "|".join(str(row_dict.get(c, "")) for c in campos)
+    return hashlib.sha256(conteudo.encode("utf-8")).hexdigest()
+
 
 rng_metodo = np.random.RandomState(SEED)
-rng_dias   = np.random.RandomState(SEED + 1)
-rng_valor  = np.random.RandomState(SEED + 2)
+rng_dias = np.random.RandomState(SEED + 1)
+rng_valor = np.random.RandomState(SEED + 2)
 
-# Define as duas parcelas juntas, em centavos, antes de embaralhar sua leitura.
-# A segunda e o restante: as parcelas sempre somam o valor liquido original.
+# A segunda parcela recebe o restante para fechar o valor em centavos.
 rng_parcelas = np.random.RandomState(SEED + 3)
 valores_parcelas = {}
 for _, transacao in df_duplicadas.iterrows():
-    total_centavos = int(round(float(transacao['valor_liquido']) * 100))
+    total_centavos = int(round(float(transacao["valor_liquido"]) * 100))
     primeira = int(round(total_centavos * rng_parcelas.uniform(0.48, 0.52)))
-    valores_parcelas[transacao['id_transacao_raw']] = (
-        primeira, total_centavos - primeira,
+    valores_parcelas[transacao["id_transacao_raw"]] = (
+        primeira,
+        total_centavos - primeira,
     )
 
 registros = []
 for seq, row in df_base.iterrows():
-    id_rec       = seq + 1
-    id_trans = row['id_transacao_raw']
-    status       = row['status_pagamento']
-    parcela      = int(row.get('parcela', 1))
+    id_rec = seq + 1
+    id_trans = row["id_transacao_raw"]
+    status = row["status_pagamento"]
+    parcela = int(row.get("parcela", 1))
 
-    if status == 'ATRASADO':
+    if status == "ATRASADO":
         delta_dias = rng_dias.randint(3, 15)
     elif parcela == 2:
         delta_dias = rng_dias.randint(28, 45)
     else:
         delta_dias = rng_dias.randint(0, 4)
-    data_rec = (row['data_transacao'] + timedelta(days=int(delta_dias))).strftime('%Y-%m-%d')
+    data_rec = (row["data_transacao"] + timedelta(days=int(delta_dias))).strftime(
+        "%Y-%m-%d"
+    )
 
-    val_base = float(row['valor_liquido'])
+    val_base = float(row["valor_liquido"])
     if id_trans in valores_parcelas:
         valor = valores_parcelas[id_trans][parcela - 1] / 100
-    elif status == 'ATRASADO':
+    elif status == "ATRASADO":
         fator = rng_valor.uniform(0.95, 1.03)
         valor = round(val_base * fator, 2)
     else:
         valor = round(val_base, 2)
 
-    metodo_fato = str(row.get('forma_pagamento', '')).upper()
+    metodo_fato = str(row.get("forma_pagamento", "")).upper()
     if metodo_fato in METODOS_RECEBIMENTO:
         metodo = metodo_fato
     else:
@@ -169,72 +170,76 @@ for seq, row in df_base.iterrows():
     comprovante = gerar_comprovante(id_rec, id_trans, data_rec)
 
     reg = {
-        'id_recebimento_raw':  id_rec,
-        'id_transacao_raw':    id_trans,
-        'data_recebimento':    data_rec,
-        'valor_recebido':      valor,
-        'metodo_recebimento':  metodo,
-        'comprovante':         comprovante,
+        "id_recebimento_raw": id_rec,
+        "id_transacao_raw": id_trans,
+        "data_recebimento": data_rec,
+        "valor_recebido": valor,
+        "metodo_recebimento": metodo,
+        "comprovante": comprovante,
     }
-    reg['raw_row_hash'] = gerar_hash(reg)
+    reg["raw_row_hash"] = gerar_hash(reg)
     registros.append(reg)
 
-print(f'Registros de recebimento gerados: {len(registros):,}')
-
-
-# In[5]:
+print(f"Registros de recebimento gerados: {len(registros):,}")
 
 
 for seq, row in enumerate(registros, start=1):
-    row['ingestion_id']  = INGESTION_ID
-    row['ingestion_ts']  = INGESTION_TS
-    row['source_system'] = SOURCE_SYSTEM
-    row['source_entity'] = SOURCE_ENTITY
-    row['row_seq']       = seq
+    row["ingestion_id"] = INGESTION_ID
+    row["ingestion_ts"] = INGESTION_TS
+    row["source_system"] = SOURCE_SYSTEM
+    row["source_entity"] = SOURCE_ENTITY
+    row["row_seq"] = seq
 
 COLUNAS = [
-    'id_recebimento_raw', 'id_transacao_raw', 'data_recebimento', 'valor_recebido',
-    'metodo_recebimento', 'comprovante', 'ingestion_id', 'ingestion_ts',
-    'source_system', 'source_entity', 'row_seq', 'raw_row_hash',
+    "id_recebimento_raw",
+    "id_transacao_raw",
+    "data_recebimento",
+    "valor_recebido",
+    "metodo_recebimento",
+    "comprovante",
+    "ingestion_id",
+    "ingestion_ts",
+    "source_system",
+    "source_entity",
+    "row_seq",
+    "raw_row_hash",
 ]
 df_rec = pd.DataFrame(registros, columns=COLUNAS)
 
-print(f'Shape final: {df_rec.shape}')
+print(f"Shape final: {df_rec.shape}")
 df_rec.head()
 
 
-# In[6]:
+assert df_rec["id_recebimento_raw"].nunique() == len(df_rec), "IDs duplicados!"
+assert df_rec["comprovante"].nunique() == len(df_rec), "Comprovantes duplicados!"
+assert not (
+    df_base["status_pagamento"] == "CANCELADO"
+).any(), "recebimento de transação cancelada!"
+assert df_rec["valor_recebido"].min() > 0, "Valores negativos ou zero!"
 
-
-assert df_rec['id_recebimento_raw'].nunique() == len(df_rec), 'IDs duplicados!'
-assert df_rec['comprovante'].nunique() == len(df_rec), 'Comprovantes duplicados!'
-assert not (df_base['status_pagamento'] == 'CANCELADO').any(), 'recebimento de transação cancelada!'
-assert df_rec['valor_recebido'].min() > 0, 'Valores negativos ou zero!'
-
-ids_fato = set(df_fato['id_transacao_raw'])
-ids_rec  = set(df_rec['id_transacao_raw'])
+ids_fato = set(df_fato["id_transacao_raw"])
+ids_rec = set(df_rec["id_transacao_raw"])
 nao_existentes = ids_rec - ids_fato
-assert len(nao_existentes) == 0, f'IDs de transação inválidos: {list(nao_existentes)[:5]}'
+assert (
+    len(nao_existentes) == 0
+), f"IDs de transação inválidos: {list(nao_existentes)[:5]}"
 
-print(f'{len(df_rec):,} registros gerados.')
-print('Comprovantes únicos, valores positivos.')
-print('Todos os id_transacao_raw existem na tabela fato.')
+print(f"{len(df_rec):,} registros gerados.")
+print("Comprovantes únicos, valores positivos.")
+print("Todos os id_transacao_raw existem na tabela fato.")
 print()
-print('Distribuição por metodo_recebimento:')
-print(df_rec['metodo_recebimento'].value_counts().to_string())
+print("Distribuição por metodo_recebimento:")
+print(df_rec["metodo_recebimento"].value_counts().to_string())
 print()
-print('Estatísticas de valor_recebido:')
-print(df_rec['valor_recebido'].describe().round(2).to_string())
+print("Estatísticas de valor_recebido:")
+print(df_rec["valor_recebido"].describe().round(2).to_string())
 
 
-# In[7]:
-
-
-output_dir  = os.path.join(workspace, 'data', 'raw', 'recebimentos')
+output_dir = os.path.join(workspace, "data", "raw", "recebimentos")
 os.makedirs(output_dir, exist_ok=True)
 
-output_path = os.path.join(output_dir, 'recebimentos.csv')
-df_rec.to_csv(output_path, index=False, encoding='utf-8')
+output_path = os.path.join(output_dir, "recebimentos.csv")
+df_rec.to_csv(output_path, index=False, encoding="utf-8")
 
-print(f'Arquivo exportado: {output_path}')
-print(f'Total de registros: {len(df_rec):,}')
+print(f"Arquivo exportado: {output_path}")
+print(f"Total de registros: {len(df_rec):,}")

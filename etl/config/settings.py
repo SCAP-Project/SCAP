@@ -1,9 +1,4 @@
-"""Configurações centralizadas lidas do ambiente (.env).
-
-Ponto único de verdade para credenciais do RDS, caminhos de dados e
-constantes do pipeline. Todos os scripts ETL devem importar daqui em vez
-de chamar os.getenv espalhado pelo código.
-"""
+"""Configurações de conexão e caminhos lidos do ambiente."""
 
 from __future__ import annotations
 
@@ -14,10 +9,8 @@ from urllib.parse import quote_plus
 
 from dotenv import load_dotenv
 
-# Raiz do projeto: etl/config/settings.py -> etl -> config -> <root>
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-# Carrega o .env da raiz do projeto (não sobrescreve variáveis já definidas no SO).
 load_dotenv(PROJECT_ROOT / ".env")
 
 
@@ -47,8 +40,6 @@ class Settings:
     @property
     def database_url(self) -> str:
         """URL SQLAlchemy (driver psycopg2) para o RDS PostgreSQL."""
-        # quote_plus escapa caracteres especiais (@ : / # % ...) na senha/usuario
-        # para nao quebrar a URL de conexao.
         return (
             f"postgresql+psycopg2://{quote_plus(self.db_user)}:{quote_plus(self.db_password)}"
             f"@{self.db_host}:{self.db_port}/{self.db_name}"
@@ -60,5 +51,4 @@ class Settings:
         return PROJECT_ROOT / "data" / "raw"
 
 
-# Instância única reutilizada por todo o pipeline.
 settings = Settings()

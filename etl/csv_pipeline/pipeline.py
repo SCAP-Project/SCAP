@@ -54,8 +54,14 @@ def verify_previous(data_dir, observed_on):
         raise ValueError("Data de observacao anterior a ultima execucao")
     for relative, expected in manifest["outputs"].items():
         path = (data_dir / relative).resolve()
-        if not path.is_relative_to(data_dir) or not path.is_file() or checksum(path) != expected:
-            raise ValueError(f"Saida alterada ou incompleta: {relative}; restaure a ultima geracao valida")
+        if (
+            not path.is_relative_to(data_dir)
+            or not path.is_file()
+            or checksum(path) != expected
+        ):
+            raise ValueError(
+                f"Saida alterada ou incompleta: {relative}; restaure a ultima geracao valida"
+            )
 
 
 def read_raw(data_dir):
@@ -64,7 +70,10 @@ def read_raw(data_dir):
         files = sorted((data_dir / "raw" / entity).glob("*.csv"))
         if not files:
             raise FileNotFoundError(f"CSV obrigatorio ausente: raw/{entity}/*.csv")
-        frames[entity] = pd.concat([pd.read_csv(p, dtype=str, keep_default_na=False) for p in files], ignore_index=True)
+        frames[entity] = pd.concat(
+            [pd.read_csv(p, dtype=str, keep_default_na=False) for p in files],
+            ignore_index=True,
+        )
         paths.extend(files)
     return frames, paths
 
@@ -79,24 +88,37 @@ def run_pipeline(data_dir: Path, observed_on=None, validate_only=False):
     observed_on = observed_on or date.today()
     verify_previous(data_dir, observed_on)
     raw, inputs = read_raw(data_dir)
-    previous = {p.stem: pd.read_csv(p, dtype=str, keep_default_na=False)
-                for p in (data_dir / "trusted").glob("*.csv")}
+    previous = {
+        p.stem: pd.read_csv(p, dtype=str, keep_default_na=False)
+        for p in (data_dir / "trusted").glob("*.csv")
+    }
     trusted = build_trusted(raw, previous, observed_on)
     refined = build_refined(trusted)
     validate_refined(refined)
     ground_truth = data_dir / "ground_truth/transacoes_gabarito.csv"
     if ground_truth.is_file():
         labels = pd.read_csv(ground_truth, dtype=str, keep_default_na=False)
-        if labels.id_transacao_raw.duplicated().any() or set(labels.id_transacao_raw) != set(raw["transacoes_financeiras"].id_transacao_raw):
+        if labels.id_transacao_raw.duplicated().any() or set(
+            labels.id_transacao_raw
+        ) != set(raw["transacoes_financeiras"].id_transacao_raw):
             raise ValueError("Gabarito nao corresponde as transacoes locais")
         inputs.append(ground_truth)
     manifest = {
         "executed_at_utc": datetime.now(timezone.utc).isoformat(),
         "observed_on": observed_on.isoformat(),
-        "storage": "csv", "financial_unit": "BRL/USD/EUR separados por moeda_sk",
+        "storage": "csv",
+        "financial_unit": "BRL/USD/EUR separados por moeda_sk",
         "history_policy": "SCD2 diario por observacao; correcoes no mesmo dia consolidam a versao",
         "inputs": {str(p.relative_to(data_dir)): checksum(p) for p in inputs},
-        "counts": {f"{layer}.{name}": len(frame) for layer, tables in [("raw", raw), ("trusted", trusted), ("refined", refined)] for name, frame in tables.items()},
+        "counts": {
+            f"{layer}.{name}": len(frame)
+            for layer, tables in [
+                ("raw", raw),
+                ("trusted", trusted),
+                ("refined", refined),
+            ]
+            for name, frame in tables.items()
+        },
         "outputs": {},
     }
     if validate_only:
@@ -112,6 +134,10 @@ def run_pipeline(data_dir: Path, observed_on=None, validate_only=False):
                 manifest["outputs"][f"{layer}/{name}.csv"] = checksum(path)
         (staging / "exports").mkdir()
         manifest_path = staging / "exports/etl_manifest.json"
-        manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        publish(staging, data_dir, list(manifest["outputs"]) + ["exports/etl_manifest.json"])
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+        publish(
+            staging, data_dir, list(manifest["outputs"]) + ["exports/etl_manifest.json"]
+        )
     return manifest

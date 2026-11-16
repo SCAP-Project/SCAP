@@ -1,20 +1,4 @@
-"""Transformacao trusted -> refined: trusted.moedas -> refined.dim_moeda.
-
-refined tem chaves substitutas PROPRIAS (nao reaproveita trusted.moeda_sk) --
-o de/para entre as duas camadas e sempre por chave natural (codigo_iso).
-
-refined.dim_moeda.codigo_iso e UNIQUE sozinho (nao par com vigencia_inicio
-como as outras dimensoes), entao aqui so existe uma versao por moeda mesmo
-com as colunas de SCD2 presentes na tabela. Copia todas as colunas de
-trusted (nao so is_current=TRUE) para refined ficar espelhado com a origem.
-
-UPSERT idempotente por codigo_iso.
-
-Pre-requisito: seed_moedas.py (camada trusted) ja executado.
-
-Uso:
-    python -m etl.trusted_to_refined.transform_dim_moeda
-"""
+"""Replica moedas em refined.dim_moeda, usando codigo_iso para o mapeamento."""
 
 from __future__ import annotations
 
@@ -66,10 +50,14 @@ def main() -> None:
             execute_values(cur, SQL_UPSERT, linhas)
 
         raw_conn.commit()
-        log.info("trusted.moedas -> refined.dim_moeda concluido: %d linha(s)", len(linhas))
+        log.info(
+            "trusted.moedas -> refined.dim_moeda concluido: %d linha(s)", len(linhas)
+        )
     except Exception:
         raw_conn.rollback()
-        log.exception("Falha na transformacao -- rollback aplicado, nada foi persistido")
+        log.exception(
+            "Falha na transformacao -- rollback aplicado, nada foi persistido"
+        )
         raise
     finally:
         raw_conn.close()

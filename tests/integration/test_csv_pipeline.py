@@ -1,5 +1,4 @@
 from datetime import date
-from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -10,20 +9,94 @@ from etl.csv_pipeline.pipeline import run_pipeline
 def write_fixture(data):
     raw = {
         "areas": [dict(codigo_area="FIN", nome_area="Financeiro")],
-        "categorias_contabeis": [dict(id_categoria_raw="1", nome_categoria="Venda", tipo_categoria="RECEITA", codigo_contabil="4.1"),
-                                 dict(id_categoria_raw="2", nome_categoria="Compra", tipo_categoria="DESPESA", codigo_contabil="2.1")],
-        "fornecedores_clientes": [dict(id_fornecedor_raw="P1", nome_fornecedor="Parceiro", tipo_fornecedor="AMBOS", rating_credito="AAA", prazo_medio="2")],
-        "funcionarios": [dict(id_funcionario_raw="1", nome="Pessoa", cpf="123", cargo="Analista", departamento="FIN",
-                              data_admissao="2024-01-01", tipo_contrato="CLT", salario="2000.00")],
-        "transacoes_financeiras": [dict(id_transacao_raw="T1", tipo_transacao="RECEITA", id_categoria_raw="1", valor_bruto="100.01", valor_liquido="100.01"),
-                                   dict(id_transacao_raw="T2", tipo_transacao="DESPESA", id_categoria_raw="2", valor_bruto="30.01", valor_liquido="30.01")],
-        "pagamentos": [dict(id_pagamento_raw="1", id_transacao_raw="T2", data_pagamento="2025-01-03", valor_pago="30.01", metodo_pagamento="PIX")],
-        "recebimentos": [dict(id_recebimento_raw="1", id_transacao_raw="T1", data_recebimento="2025-01-01", valor_recebido="50.01", metodo_recebimento="PIX"),
-                         dict(id_recebimento_raw="2", id_transacao_raw="T1", data_recebimento="2025-01-03", valor_recebido="50.00", metodo_recebimento="PIX")],
+        "categorias_contabeis": [
+            dict(
+                id_categoria_raw="1",
+                nome_categoria="Venda",
+                tipo_categoria="RECEITA",
+                codigo_contabil="4.1",
+            ),
+            dict(
+                id_categoria_raw="2",
+                nome_categoria="Compra",
+                tipo_categoria="DESPESA",
+                codigo_contabil="2.1",
+            ),
+        ],
+        "fornecedores_clientes": [
+            dict(
+                id_fornecedor_raw="P1",
+                nome_fornecedor="Parceiro",
+                tipo_fornecedor="AMBOS",
+                rating_credito="AAA",
+                prazo_medio="2",
+            )
+        ],
+        "funcionarios": [
+            dict(
+                id_funcionario_raw="1",
+                nome="Pessoa",
+                cpf="123",
+                cargo="Analista",
+                departamento="FIN",
+                data_admissao="2024-01-01",
+                tipo_contrato="CLT",
+                salario="2000.00",
+            )
+        ],
+        "transacoes_financeiras": [
+            dict(
+                id_transacao_raw="T1",
+                tipo_transacao="RECEITA",
+                id_categoria_raw="1",
+                valor_bruto="100.01",
+                valor_liquido="100.01",
+            ),
+            dict(
+                id_transacao_raw="T2",
+                tipo_transacao="DESPESA",
+                id_categoria_raw="2",
+                valor_bruto="30.01",
+                valor_liquido="30.01",
+            ),
+        ],
+        "pagamentos": [
+            dict(
+                id_pagamento_raw="1",
+                id_transacao_raw="T2",
+                data_pagamento="2025-01-03",
+                valor_pago="30.01",
+                metodo_pagamento="PIX",
+            )
+        ],
+        "recebimentos": [
+            dict(
+                id_recebimento_raw="1",
+                id_transacao_raw="T1",
+                data_recebimento="2025-01-01",
+                valor_recebido="50.01",
+                metodo_recebimento="PIX",
+            ),
+            dict(
+                id_recebimento_raw="2",
+                id_transacao_raw="T1",
+                data_recebimento="2025-01-03",
+                valor_recebido="50.00",
+                metodo_recebimento="PIX",
+            ),
+        ],
     }
     for transaction in raw["transacoes_financeiras"]:
-        transaction.update(data_transacao="2025-01-01", data_competencia="2025-01-01", codigo_area_raw="FIN", id_fornecedor_raw="P1",
-                           moeda="BRL", forma_pagamento="PIX", status_pagamento="PAGO", descricao="  Venda   teste  ")
+        transaction.update(
+            data_transacao="2025-01-01",
+            data_competencia="2025-01-01",
+            codigo_area_raw="FIN",
+            id_fornecedor_raw="P1",
+            moeda="BRL",
+            forma_pagamento="PIX",
+            status_pagamento="PAGO",
+            descricao="  Venda   teste  ",
+        )
     for entity, rows in raw.items():
         folder = data / "raw" / entity
         folder.mkdir(parents=True)
@@ -37,7 +110,11 @@ def test_fluxo_csv_completo_reexecucao_e_historico(tmp_path):
     result = run_pipeline(tmp_path, observed_on=date(2026, 11, 9))
     assert result["counts"]["refined.fact_recebimentos"] == 2
     assert result["counts"]["refined.fact_saldos_diarios"] == 3
-    outputs = {str(p.relative_to(tmp_path)): p.read_bytes() for layer in ["trusted", "refined"] for p in (tmp_path / layer).glob("*.csv")}
+    outputs = {
+        str(p.relative_to(tmp_path)): p.read_bytes()
+        for layer in ["trusted", "refined"]
+        for p in (tmp_path / layer).glob("*.csv")
+    }
     run_pipeline(tmp_path, observed_on=date(2026, 11, 9))
     assert all((tmp_path / p).read_bytes() == content for p, content in outputs.items())
     path = tmp_path / "raw/areas/fixture.csv"
@@ -76,9 +153,15 @@ def test_falta_de_arquivo_obrigatorio_interrompe_fluxo(tmp_path):
 
 def test_falha_de_gravacao_restaura_geracao_anterior(tmp_path, monkeypatch):
     import os
+
     write_fixture(tmp_path)
     run_pipeline(tmp_path, observed_on=date(2026, 11, 9))
-    before = {p: p.read_bytes() for layer in ["trusted", "refined", "exports"] for p in (tmp_path / layer).glob("*") if p.is_file()}
+    before = {
+        p: p.read_bytes()
+        for layer in ["trusted", "refined", "exports"]
+        for p in (tmp_path / layer).glob("*")
+        if p.is_file()
+    }
     area = tmp_path / "raw/areas/fixture.csv"
     frame = pd.read_csv(area)
     frame.loc[0, "nome_area"] = "Financas"

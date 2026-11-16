@@ -1,23 +1,6 @@
-"""Transformacao trusted -> refined: trusted.funcionarios -> refined.dim_funcionario.
+"""Replica funcionários em refined e resolve a área pela chave natural.
 
-area_sk precisa ser RESOLVIDO de novo: refined.dim_area tem chaves substitutas
-proprias, diferentes de trusted.areas.area_sk. O caminho e
-trusted.funcionarios.area_sk -> trusted.areas.id_area_natural (join) ->
-refined.dim_area.area_sk (lookup pela versao vigente).
-
-Fora isso, mesmo padrao das outras dimensoes: copia todo o historico de
-trusted, UPSERT idempotente por (id_funcionario_natural, vigencia_inicio).
-
-Esta dimensao nao se conecta a nenhum fato (a origem nao vincula funcionario
-a transacao), entao nao bloqueia a modelagem -- e populada por completude do
-star schema (analises de quadro/RH).
-
-Pre-requisito: transform_funcionarios.py (trusted) e transform_dim_area.py
-(refined) ja executados.
-
-Uso:
-    python -m etl.trusted_to_refined.transform_dim_funcionario
-"""
+As chaves substitutas de trusted não são reutilizadas em refined."""
 
 from __future__ import annotations
 
@@ -29,10 +12,11 @@ from etl.config import get_engine, get_logger
 
 log = get_logger(__name__)
 
-SQL_AREAS_REFINED_ATUAIS = "SELECT id_area_natural, area_sk FROM refined.dim_area WHERE is_current = TRUE"
+SQL_AREAS_REFINED_ATUAIS = (
+    "SELECT id_area_natural, area_sk FROM refined.dim_area WHERE is_current = TRUE"
+)
 
-# Join com trusted.areas resolve o id_area_natural de cada funcionario a
-# partir do area_sk (que em trusted aponta pra trusted.areas, nao refined).
+# Recupera a chave natural da área antes de mapear para refined.
 SQL_EXTRAIR_TRUSTED = """
     SELECT f.id_funcionario_natural, f.nome, f.cpf, f.cargo, a.id_area_natural,
            f.data_admissao, f.tipo_contrato, f.salario,
@@ -72,7 +56,9 @@ def main() -> None:
             areas_refined = dict(cur.fetchall())
 
             if not areas_refined:
-                log.error("refined.dim_area esta vazia -- rode transform_dim_area.py antes")
+                log.error(
+                    "refined.dim_area esta vazia -- rode transform_dim_area.py antes"
+                )
                 return
 
             cur.execute(SQL_EXTRAIR_TRUSTED)
@@ -80,7 +66,9 @@ def main() -> None:
             trusted_rows = [dict(zip(colunas, linha)) for linha in cur.fetchall()]
 
         if not trusted_rows:
-            log.warning("trusted.funcionarios esta vazia -- rode transform_funcionarios.py antes")
+            log.warning(
+                "trusted.funcionarios esta vazia -- rode transform_funcionarios.py antes"
+            )
             return
 
         linhas = []
@@ -90,17 +78,29 @@ def main() -> None:
             if area_sk is None:
                 log.warning(
                     "Funcionario %s ignorado: area '%s' nao existe em refined.dim_area",
-                    row["id_funcionario_natural"], row["id_area_natural"],
+                    row["id_funcionario_natural"],
+                    row["id_area_natural"],
                 )
                 sem_area += 1
                 continue
 
-            linhas.append((
-                row["id_funcionario_natural"], row["nome"], row["cpf"], row["cargo"], area_sk,
-                row["data_admissao"], row["tipo_contrato"], row["salario"],
-                row["vigencia_inicio"], row["vigencia_fim"], row["is_current"],
-                batch_id, row["source_system"],
-            ))
+            linhas.append(
+                (
+                    row["id_funcionario_natural"],
+                    row["nome"],
+                    row["cpf"],
+                    row["cargo"],
+                    area_sk,
+                    row["data_admissao"],
+                    row["tipo_contrato"],
+                    row["salario"],
+                    row["vigencia_inicio"],
+                    row["vigencia_fim"],
+                    row["is_current"],
+                    batch_id,
+                    row["source_system"],
+                )
+            )
 
         with raw_conn.cursor() as cur:
             execute_values(cur, SQL_UPSERT, linhas)
@@ -108,11 +108,14 @@ def main() -> None:
         raw_conn.commit()
         log.info(
             "trusted.funcionarios -> refined.dim_funcionario concluido: %d linha(s), %d sem area valida",
-            len(linhas), sem_area,
+            len(linhas),
+            sem_area,
         )
     except Exception:
         raw_conn.rollback()
-        log.exception("Falha na transformacao -- rollback aplicado, nada foi persistido")
+        log.exception(
+            "Falha na transformacao -- rollback aplicado, nada foi persistido"
+        )
         raise
     finally:
         raw_conn.close()
