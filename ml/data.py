@@ -17,13 +17,21 @@ def load_tables(data_dir=DATA_DIR):
     data_dir = Path(data_dir)
     paths = sorted((data_dir / "refined").glob("*.csv"))
     if len(paths) != 10:
-        raise FileNotFoundError("Esperadas dez tabelas refined. Execute python -m etl.csv_pipeline --generate")
-    manifest = json.loads((data_dir / "exports/etl_manifest.json").read_text(encoding="utf-8"))
+        raise FileNotFoundError(
+            "Esperadas dez tabelas refined. Execute python -m etl.csv_pipeline --generate"
+        )
+    manifest = json.loads(
+        (data_dir / "exports/etl_manifest.json").read_text(encoding="utf-8")
+    )
     result = {}
     for path in paths:
         if sha256(path) != manifest["outputs"][f"refined/{path.name}"]:
             raise ValueError(f"Snapshot alterado: {path.name}; reexecute o ETL")
-        identifiers = {c: str for c in pd.read_csv(path, nrows=0).columns if c.startswith("id_") or c == "codigo_iso"}
+        identifiers = {
+            c: str
+            for c in pd.read_csv(path, nrows=0).columns
+            if c.startswith("id_") or c == "codigo_iso"
+        }
         frame = pd.read_csv(path, dtype=identifiers)
         if "data" in frame:
             frame["data"] = pd.to_datetime(frame.data)

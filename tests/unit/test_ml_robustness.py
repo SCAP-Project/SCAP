@@ -10,16 +10,24 @@ from ml.robustness.run import assert_protocol_matches
 
 
 def fixture():
-    base = pd.DataFrame({
-        "id_transacao_natural": [f"T{i}" for i in range(200)],
-        "data": pd.date_range("2024-01-01", periods=200, freq="3D"),
-        "id_parceiro_natural": [f"P{i % 10}" for i in range(200)],
-        "tipo_transacao": "RECEITA", "id_area_natural": "FIN", "id_categoria_natural": "1",
-        "valor_bruto": 100.0,
-    })
-    labels = pd.DataFrame({"id_transacao_natural": base.id_transacao_natural,
-                           "flag_anomalia": np.arange(200) % 10 == 0,
-                           "fator_aplicado": np.where(np.arange(200) % 10 == 0, 2.0, np.nan)})
+    base = pd.DataFrame(
+        {
+            "id_transacao_natural": [f"T{i}" for i in range(200)],
+            "data": pd.date_range("2024-01-01", periods=200, freq="3D"),
+            "id_parceiro_natural": [f"P{i % 10}" for i in range(200)],
+            "tipo_transacao": "RECEITA",
+            "id_area_natural": "FIN",
+            "id_categoria_natural": "1",
+            "valor_bruto": 100.0,
+        }
+    )
+    labels = pd.DataFrame(
+        {
+            "id_transacao_natural": base.id_transacao_natural,
+            "flag_anomalia": np.arange(200) % 10 == 0,
+            "fator_aplicado": np.where(np.arange(200) % 10 == 0, 2.0, np.nan),
+        }
+    )
     return base, labels
 
 
@@ -53,7 +61,13 @@ def test_eventos_legitimos_continuam_normais_e_mudanca_afeta_normais():
 
 def test_ablacao_sem_valor_remove_tambem_todos_os_derivados_do_valor_atual():
     columns = FEATURE_GROUPS["sem_valor_atual"][0]
-    assert not set(columns) & {"log_valor", "z_historico", "z_90d", "desvio_log_historico", "desvio_log_90d"}
+    assert not set(columns) & {
+        "log_valor",
+        "z_historico",
+        "z_90d",
+        "desvio_log_historico",
+        "desvio_log_90d",
+    }
 
 
 def test_auditoria_independente_detecta_historico_adulterado():
@@ -67,15 +81,22 @@ def test_auditoria_independente_detecta_historico_adulterado():
 def test_gabarito_fora_de_ordem_e_alinhado_por_id():
     base, labels = fixture()
     original, targets = apply_scenario(base, labels, "original", 101)
-    shuffled, shuffled_targets = apply_scenario(base, labels.sample(frac=1, random_state=42), "original", 101)
+    shuffled, shuffled_targets = apply_scenario(
+        base, labels.sample(frac=1, random_state=42), "original", 101
+    )
     pd.testing.assert_frame_equal(original, shuffled)
     pd.testing.assert_frame_equal(targets, shuffled_targets)
 
 
 def test_registro_recusa_codigo_ou_ambiente_diferente():
     import copy
-    registered = dict(originais_sha256={"modelo": "abc"}, configuracao={"seed": 101},
-                      metodos_sha256={"scenarios.py": "123"}, versoes={"numpy": "1.26.2"})
+
+    registered = dict(
+        originais_sha256={"modelo": "abc"},
+        configuracao={"seed": 101},
+        metodos_sha256={"scenarios.py": "123"},
+        versoes={"numpy": "1.26.2"},
+    )
     assert_protocol_matches(registered, copy.deepcopy(registered))
     for key in ["originais_sha256", "configuracao", "metodos_sha256", "versoes"]:
         changed = copy.deepcopy(registered)
